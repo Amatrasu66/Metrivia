@@ -1,122 +1,94 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useRef, useState } from "react"
+import { AppLayout } from "@/components/layout/AppLayout"
+import { UploadPage } from "@/components/landing/UploadPage"
+import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
+import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
 
-function App() {
-  const [count, setCount] = useState(0)
+const CHECK_DELAY_MS = 900
+
+export default function App() {
+  const [view, setView] = useState("upload")
+  const [status, setStatus] = useState("idle")
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [errorMessage, setErrorMessage] = useState("")
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const handleNavigate = (nextView) => {
+    setView(nextView)
+    window.scrollTo({ top: 0 })
+  }
+
+  const handleFilesSelected = (fileList) => {
+    const file = fileList?.[0]
+    if (!file) return
+
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setSelectedFile(null)
+    setErrorMessage("")
+    setStatus("loading")
+
+    // Local metadata check only: no parsing, no upload, no fake data.
+    timerRef.current = setTimeout(() => {
+      if (!isCsvFileName(file.name)) {
+        setStatus("error")
+        setErrorMessage(
+          `“${file.name}” is not a .csv file. Please choose a file ending in .csv and try again.`,
+        )
+        return
+      }
+      if (file.size > MAX_CSV_BYTES) {
+        setStatus("error")
+        setErrorMessage(
+          `“${file.name}” exceeds the 10 MB shell limit. Please choose a smaller CSV file.`,
+        )
+        return
+      }
+      setSelectedFile({ name: file.name, size: file.size })
+      setStatus("ready")
+    }, CHECK_DELAY_MS)
+  }
+
+  const handleRemove = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setSelectedFile(null)
+    setErrorMessage("")
+    setStatus("idle")
+  }
+
+  const handleDismissError = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setErrorMessage("")
+    setStatus("idle")
+  }
+
+  const handleContinue = () => setView("dashboard")
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <AppLayout activeView={view} onNavigate={handleNavigate}>
+      {view === "upload" ? (
+        <UploadPage
+          status={status}
+          selectedFile={selectedFile}
+          errorMessage={errorMessage}
+          onFilesSelected={handleFilesSelected}
+          onRemove={handleRemove}
+          onDismissError={handleDismissError}
+          onContinue={handleContinue}
+          onViewDashboard={() => handleNavigate("dashboard")}
+        />
+      ) : (
+        <DashboardLayout
+          selectedFile={selectedFile}
+          onBackToUpload={() => handleNavigate("upload")}
+          onRemoveFile={handleRemove}
+        />
+      )}
+    </AppLayout>
   )
 }
-
-export default App
