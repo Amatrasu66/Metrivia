@@ -27,11 +27,37 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "5000"))
 DEBUG = os.environ.get("FLASK_DEBUG", "") == "1"
 
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
-    if origin.strip()
+# Explicit allowlist for local development. Covers the default Vite port
+# (5173) and the fallback port Vite picks when 5173 is busy (5174), on both
+# `localhost` and `127.0.0.1` spellings (browsers treat them as different
+# origins). No wildcards, no regexes.
+DEFAULT_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
 ]
+
+
+def _resolve_cors_origins(explicit=None):
+    """Resolve the CORS allowlist.
+
+    An explicit list (e.g. in tests) always wins. Otherwise `CORS_ORIGINS`,
+    when set to a non-blank comma-separated value like
+    "https://app.example.com,https://admin.example.com", replaces the local
+    development defaults entirely — that is how production locks down
+    origins. When `CORS_ORIGINS` is unset or blank, the local development
+    allowlist above is used.
+    """
+    if explicit is not None:
+        return list(explicit)
+    raw = os.environ.get("CORS_ORIGINS", "")
+    if raw.strip() == "":
+        return list(DEFAULT_DEV_ORIGINS)
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+CORS_ORIGINS = _resolve_cors_origins()
 
 
 class UploadError(Exception):
@@ -43,10 +69,10 @@ class UploadError(Exception):
         self.status = status
 
 
-def create_app():
+def create_app(cors_origins=None):
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
-    CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
+    CORS(app, resources={r"/api/*": {"origins": _resolve_cors_origins(cors_origins)}})
 
     @app.get("/api/health")
     def health():

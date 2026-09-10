@@ -54,9 +54,33 @@ curl.exe -F "file=@sample.csv;type=text/csv" http://127.0.0.1:5000/api/upload
 | ---------------- | ----------------------- | ---------------------------------------- |
 | `HOST`           | `0.0.0.0`               | Bind address (Render-compatible)         |
 | `PORT`           | `5000`                  | Port (Render injects `PORT`)             |
-| `CORS_ORIGINS`   | `http://localhost:5173` | Comma-separated allowed origins          |
+| `CORS_ORIGINS`   | local dev allowlist (see below) | Comma-separated allowed origins          |
 | `MAX_UPLOAD_MB`  | `10`                    | Max CSV size; larger requests get a JSON 413 |
 | `FLASK_DEBUG`    | (off)                   | Set to `1` for debug mode in development |
+
+## CORS origins
+
+When `CORS_ORIGINS` is unset or blank, the backend allows local development
+from an explicit allowlist (no wildcards):
+
+- `http://localhost:5173`, `http://localhost:5174`
+- `http://127.0.0.1:5173`, `http://127.0.0.1:5174`
+
+Both Vite ports are covered because Vite falls back to 5174 when 5173 is
+busy. To lock down production, set `CORS_ORIGINS` to a comma-separated list
+— it **replaces** the defaults entirely:
+
+```powershell
+$env:CORS_ORIGINS = "https://app.example.com,https://admin.example.com"
+python app.py
+```
+
+Format: comma-separated origins, whitespace is ignored, empty entries are
+dropped. Run the CORS regression tests with:
+
+```powershell
+.venv\Scripts\python -m unittest test_cors -v
+```
 
 ## Limits and error handling
 
