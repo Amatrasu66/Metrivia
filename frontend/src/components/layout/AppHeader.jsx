@@ -3,6 +3,7 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme/ThemeToggle"
 
 const NAV_ITEMS = [
   { id: "upload", label: "Upload" },
@@ -60,9 +61,13 @@ export function AppHeader({ activeView, onNavigate }) {
           <Badge variant="outline" className="ml-2 hidden lg:inline-flex">
             Frontend shell
           </Badge>
+          <span className="ml-1">
+            <ThemeToggle />
+          </span>
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
           <Button
             variant="outline"
             size="icon"

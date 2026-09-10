@@ -1,0 +1,18 @@
+# Render blueprint for the Metrivia Flask backend.
+# Apply via the Render dashboard: New → Blueprint → select this repo.
+# The backend stays stateless/in-memory (no database, no disk).
+services:
+  - type: web
+    name: metrivia-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    plan: free
+    envVars:
+      # Production frontend origin(s), comma-separated. Set the real Vercel
+      # URL in the Render dashboard — never commit it here.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.13.0

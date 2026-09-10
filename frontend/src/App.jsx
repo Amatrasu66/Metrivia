@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
 import { ApiError, uploadCsv } from "@/lib/api"
+import { defaultFilterState } from "@/lib/filter-data"
 import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
 
 export default function App() {
@@ -12,6 +13,8 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null)
   // Dataset analysis payload returned by POST /api/upload (null until success).
   const [dataset, setDataset] = useState(null)
+  // Global dashboard filters (reset on every upload/remove alongside dataset).
+  const [filters, setFilters] = useState(() => defaultFilterState(null))
   const [errorMessage, setErrorMessage] = useState("")
   const abortRef = useRef(null)
 
@@ -28,6 +31,7 @@ export default function App() {
 
   const failWith = (message) => {
     setDataset(null)
+    setFilters(defaultFilterState(null))
     setStatus("error")
     setErrorMessage(message)
   }
@@ -65,6 +69,7 @@ export default function App() {
     try {
       const result = await uploadCsv(file, { signal: controller.signal })
       setDataset(result)
+      setFilters(defaultFilterState(result))
       setSelectedFile({
         name: result?.filename ?? file.name,
         size: file.size,
@@ -88,6 +93,7 @@ export default function App() {
     abortRef.current = null
     setSelectedFile(null)
     setDataset(null)
+    setFilters(defaultFilterState(null))
     setErrorMessage("")
     setStatus("idle")
   }
@@ -111,6 +117,8 @@ export default function App() {
       ) : (
         <DashboardLayout
           dataset={dataset}
+          filters={filters}
+          onFiltersChange={setFilters}
           onBackToUpload={() => handleNavigate("upload")}
           onRemoveFile={resetUpload}
         />

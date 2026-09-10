@@ -31,14 +31,22 @@ const VIEW_BY_TYPE = {
  * change re-renders from the already-uploaded dataset — no re-upload, no
  * extra Flask requests. Defaults to a sensible bar chart (dimension +
  * numeric measure + Sum) when the dataset supports it.
+ *
+ * `dataset` may be a filtered view: the configuration only resets when the
+ * underlying file changes (tracked by filename), so adjusting filters
+ * never wipes the user's chart setup. `emptyAction` (e.g. a Clear filters
+ * button) renders inside the empty state when the current view has no rows.
  */
-export function ChartBuilder({ dataset }) {
+export function ChartBuilder({ dataset, emptyAction = null }) {
   const [config, setConfig] = useState(() => defaultChartConfig(dataset))
 
-  // A new upload replaces the dataset object: restart from fresh defaults.
+  // A new upload replaces the file: restart from fresh defaults. Filter
+  // changes only swap the dataset object, so they must not reset config.
+  const datasetKey = dataset?.filename ?? null
   useEffect(() => {
     setConfig(defaultChartConfig(dataset))
-  }, [dataset])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasetKey])
 
   const dimensionOptions = useMemo(
     () => getDimensionOptions(dataset, config.chartType),
@@ -131,7 +139,13 @@ export function ChartBuilder({ dataset }) {
       </div>
 
       <div aria-live="polite" className="min-w-0">
-        {prepared.status === "ok" ? (
+        {(dataset?.preview ?? []).length === 0 ? (
+          <EmptyState
+            title="No rows match the current filters"
+            description="The active filters removed every row. Clear them to restore the full dataset — your chart configuration is kept."
+            action={emptyAction}
+          />
+        ) : prepared.status === "ok" ? (
           <div className="flex min-w-0 flex-col gap-2">
             <ChartView data={prepared.data} />
             <p className="text-xs break-words text-muted-foreground">
