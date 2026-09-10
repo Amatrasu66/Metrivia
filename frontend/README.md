@@ -1,16 +1,43 @@
-# React + Vite
+# Metrivia Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite + Tailwind CSS v4 application shell. The CSV upload flow sends
+files to the Flask backend (`POST /api/upload`) and renders the returned
+dataset analysis in the dashboard. All backend calls live in
+`src/lib/api.js` — components never call `fetch()` directly.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```powershell
+npm install
+npm run dev
+```
 
-## React Compiler
+The app is served at `http://localhost:5173`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend API setup
 
-## Expanding the ESLint configuration
+Copy the example env file and adjust if Flask runs elsewhere:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```powershell
+Copy-Item .env.example .env
+```
+
+`.env` files are git-ignored (see root `.gitignore`) — only `.env.example`
+is committed.
+
+| Variable       | Default                 | Purpose                              |
+| -------------- | ----------------------- | ------------------------------------ |
+| `VITE_API_URL` | `http://localhost:5000` | Base URL of the Flask backend        |
+
+Without a `.env` file, the app uses the default above. For a production
+build against Render, set `VITE_API_URL` at build time — never hardcode the
+production URL into components.
+
+Start Flask first (see `../backend/README.md`), then upload
+`public/sample.csv` through the UI to try the full flow.
+
+## Scripts
+
+- `npm run dev` — start the dev server
+- `npm run lint` — run ESLint
+- `npm run build` — production build

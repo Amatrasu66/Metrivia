@@ -1,7 +1,7 @@
 import { FileSpreadsheet, Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { formatFileSize } from "@/lib/format"
+import { formatCount, formatFileSize } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ErrorState } from "@/components/states/ErrorState"
@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/states/LoadingState"
 export function CsvUploadZone({
   status,
   selectedFile,
+  dataset,
   errorMessage,
   onFilesSelected,
   onRemove,
@@ -39,8 +40,7 @@ export function CsvUploadZone({
           Upload a CSV file
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Files stay in your browser for now. Parsing and backend upload arrive
-          later.
+          Sent to the local Flask backend for analysis. Files are not stored.
         </p>
       </div>
 
@@ -101,7 +101,7 @@ export function CsvUploadZone({
 
       <div aria-live="polite" className="flex min-w-0 flex-col gap-3">
         {status === "loading" ? (
-          <LoadingState label="Checking file details…" />
+          <LoadingState label="Uploading and analyzing…" />
         ) : null}
 
         {status === "error" ? (
@@ -128,11 +128,15 @@ export function CsvUploadZone({
                 </p>
                 <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>{formatFileSize(selectedFile.size)}</span>
-                  <Badge>CSV ready</Badge>
+                  <Badge>Analyzed</Badge>
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Content is not parsed yet. This only confirms the file type.
-                </p>
+                {dataset ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatCount(dataset.row_count)} rows ·{" "}
+                    {formatCount(dataset.column_count)} columns detected by the
+                    backend.
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">

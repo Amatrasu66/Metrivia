@@ -2,20 +2,22 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
+import { ApiError, uploadCsv } from "@/lib/api"
 import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
-
-const CHECK_DELAY_MS = 900
 
 export default function App() {
   const [view, setView] = useState("upload")
+  // idle | loading | ready | error
   const [status, setStatus] = useState("idle")
   const [selectedFile, setSelectedFile] = useState(null)
+  // Dataset analysis payload returned by POST /api/upload (null until success).
+  const [dataset, setDataset] = useState(null)
   const [errorMessage, setErrorMessage] = useState("")
-  const timerRef = useRef(null)
+  const abortRef = useRef(null)
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
+      abortRef.current?.abort()
     }
   }, [])
 
@@ -24,45 +26,68 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
-  const handleFilesSelected = (fileList) => {
+  const failWith = (message) => {
+    setDataset(null)
+    setStatus("error")
+    setErrorMessage(message)
+  }
+
+  const handleFilesSelected = async (fileList) => {
     const file = fileList?.[0]
     if (!file) return
 
-    if (timerRef.current) clearTimeout(timerRef.current)
-    setSelectedFile(null)
+    // Cancel any in-flight upload before starting a new one.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    // Basic client-side checks first — no network needed for these.
+    if (!isCsvFileName(file.name)) {
+      setSelectedFile(null)
+      failWith(
+        `“${file.name}” is not a .csv file. Please choose a file ending in .csv and try again.`,
+      )
+      return
+    }
+    if (file.size > MAX_CSV_BYTES) {
+      setSelectedFile(null)
+      failWith(
+        `“${file.name}” exceeds the 10 MB limit. Please choose a smaller CSV file.`,
+      )
+      return
+    }
+
+    setSelectedFile({ name: file.name, size: file.size })
+    setDataset(null)
     setErrorMessage("")
     setStatus("loading")
 
-    // Local metadata check only: no parsing, no upload, no fake data.
-    timerRef.current = setTimeout(() => {
-      if (!isCsvFileName(file.name)) {
-        setStatus("error")
-        setErrorMessage(
-          `“${file.name}” is not a .csv file. Please choose a file ending in .csv and try again.`,
-        )
-        return
-      }
-      if (file.size > MAX_CSV_BYTES) {
-        setStatus("error")
-        setErrorMessage(
-          `“${file.name}” exceeds the 10 MB shell limit. Please choose a smaller CSV file.`,
-        )
-        return
-      }
-      setSelectedFile({ name: file.name, size: file.size })
+    try {
+      const result = await uploadCsv(file, { signal: controller.signal })
+      setDataset(result)
+      setSelectedFile({
+        name: result?.filename ?? file.name,
+        size: file.size,
+      })
       setStatus("ready")
-    }, CHECK_DELAY_MS)
+    } catch (err) {
+      // Ignore cancellations from Remove / a newer selection / unmount.
+      if (err?.name === "AbortError") return
+      setDataset(null)
+      setStatus("error")
+      setErrorMessage(
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong while uploading. Please try again.",
+      )
+    }
   }
 
-  const handleRemove = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
+  const resetUpload = () => {
+    abortRef.current?.abort()
+    abortRef.current = null
     setSelectedFile(null)
-    setErrorMessage("")
-    setStatus("idle")
-  }
-
-  const handleDismissError = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
+    setDataset(null)
     setErrorMessage("")
     setStatus("idle")
   }
@@ -75,18 +100,19 @@ export default function App() {
         <UploadPage
           status={status}
           selectedFile={selectedFile}
+          dataset={dataset}
           errorMessage={errorMessage}
           onFilesSelected={handleFilesSelected}
-          onRemove={handleRemove}
-          onDismissError={handleDismissError}
+          onRemove={resetUpload}
+          onDismissError={resetUpload}
           onContinue={handleContinue}
           onViewDashboard={() => handleNavigate("dashboard")}
         />
       ) : (
         <DashboardLayout
-          selectedFile={selectedFile}
+          dataset={dataset}
           onBackToUpload={() => handleNavigate("upload")}
-          onRemoveFile={handleRemove}
+          onRemoveFile={resetUpload}
         />
       )}
     </AppLayout>

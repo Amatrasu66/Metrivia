@@ -35,22 +35,22 @@ const HIGHLIGHTS = [
   },
   {
     icon: Plug,
-    title: "Backend-ready shell",
+    title: "Real Flask backend",
     description:
-      "Upload, dashboard, and states are in place for Flask and charts later.",
+      "Uploads are analyzed by Pandas and the results feed the dashboard.",
   },
 ]
 
 const STEPS = [
   {
     title: "Upload",
-    description: "Choose a .csv file. Validation is local only.",
+    description: "Choose a .csv file. It is sent to Flask for analysis.",
     state: "Available now",
   },
   {
     title: "Preview",
-    description: "Column detection and row preview arrive with parsing.",
-    state: "Next",
+    description: "Column types, stats, and row preview from the backend.",
+    state: "Available now",
   },
   {
     title: "Visualize",
@@ -62,6 +62,7 @@ const STEPS = [
 export function UploadPage({
   status,
   selectedFile,
+  dataset,
   errorMessage,
   onFilesSelected,
   onRemove,
@@ -142,6 +143,7 @@ export function UploadPage({
             <CsvUploadZone
               status={status}
               selectedFile={selectedFile}
+              dataset={dataset}
               errorMessage={errorMessage}
               onFilesSelected={onFilesSelected}
               onRemove={onRemove}
@@ -197,14 +199,14 @@ export function UploadPage({
                   aria-hidden="true"
                   className="mt-0.5 size-4 shrink-0"
                 />
-                No account, database, or server call in this shell.
+                No account or database. Files are analyzed, never stored.
               </li>
               <li className="flex items-start gap-2">
                 <Check
                   aria-hidden="true"
                   className="mt-0.5 size-4 shrink-0"
                 />
-                No CSV parsing or chart library yet.
+                CSV analysis runs in Flask. No chart library yet.
               </li>
             </ul>
           </CardContent>
@@ -245,11 +247,11 @@ export function UploadPage({
             <CardHeader>
               <CardTitle>Loading</CardTitle>
               <CardDescription>
-                Shown while file details are checked.
+                Shown while the backend analyzes the upload.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <LoadingState label="Checking file details…" />
+              <LoadingState label="Uploading and analyzing…" />
             </CardContent>
           </Card>
           <Card className="min-w-0">

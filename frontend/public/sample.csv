@@ -1,0 +1,13 @@
+id,product,category,price,in_stock,created_at,notes
+1,Widget-0001,hardware,10.49,true,2024-01-02,First batch
+2,Widget-0002,software,11.99,false,2024-01-03,
+3,Widget-0003,services,,true,2024-01-04,Backordered
+4,Widget-0004,hardware,13.99,true,2024-01-05,
+5,Widget-0005,software,14.49,false,2024-01-06,Clearance
+6,Widget-0006,services,15.99,true,2024-01-07,First batch
+7,Widget-0007,hardware,,false,2024-01-08,
+8,Widget-0008,software,16.99,true,2024-01-09,Restocked
+9,Widget-0009,services,17.49,true,2024-01-10,Backordered
+10,Widget-0010,hardware,18.99,false,2024-01-11,
+11,Widget-0011,software,19.49,true,2024-01-12,Clearance
+12,Widget-0012,services,20.99,false,2024-01-13,First batch
