@@ -1,4 +1,4 @@
-import { BarChart3, FileSpreadsheet, Table } from "lucide-react"
+import { FileSpreadsheet, Table } from "lucide-react"
 import { formatCount, formatPercent } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card"
 import { EmptyState } from "@/components/states/EmptyState"
 import { Button } from "@/components/ui/button"
+import { DatasetBarChart } from "@/components/charts/DatasetBarChart"
 
 // Keep wide datasets usable on small screens: the table scrolls inside its
 // card, so the page itself never overflows horizontally.
@@ -180,25 +181,13 @@ export function DashboardPlaceholder({ dataset, onUpload }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Trend chart</CardTitle>
+            <CardTitle>Bar chart</CardTitle>
             <CardDescription>
-              Visualization layer will render here. No chart library installed
-              yet.
+              Sum by category from the uploaded dataset.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex min-w-0 flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-              <BarChart3
-                aria-hidden="true"
-                className="size-8 text-muted-foreground"
-              />
-              <p className="text-sm font-medium">Chart placeholder</p>
-              <p className="max-w-sm text-xs text-muted-foreground sm:text-sm">
-                A line, bar, or area view of the uploaded dataset will appear
-                here.
-              </p>
-              <Badge variant="secondary">Bklit arrives later</Badge>
-            </div>
+            <DatasetBarChart dataset={dataset} />
           </CardContent>
         </Card>
 

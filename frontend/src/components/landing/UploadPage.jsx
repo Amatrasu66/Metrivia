@@ -286,8 +286,8 @@ export function UploadPage({
                 Dashboard layout is ready
               </h2>
               <p className="mt-0.5 text-sm break-words text-muted-foreground">
-                KPI cards, chart, and table placeholders adapt from mobile to
-                desktop.
+                KPI cards, a live bar chart, and the data table adapt from
+                mobile to desktop.
               </p>
             </div>
           </div>
