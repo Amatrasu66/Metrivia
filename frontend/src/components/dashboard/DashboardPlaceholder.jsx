@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card"
 import { EmptyState } from "@/components/states/EmptyState"
 import { Button } from "@/components/ui/button"
-import { DatasetBarChart } from "@/components/charts/DatasetBarChart"
+import { ChartBuilder } from "@/components/charts/ChartBuilder"
 
 // Keep wide datasets usable on small screens: the table scrolls inside its
 // card, so the page itself never overflows horizontally.
@@ -181,13 +181,14 @@ export function DashboardPlaceholder({ dataset, onUpload }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Bar chart</CardTitle>
+            <CardTitle>Chart</CardTitle>
             <CardDescription>
-              Sum by category from the uploaded dataset.
+              Configure the visualization — it updates instantly from the
+              uploaded dataset, no re-upload needed.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <DatasetBarChart dataset={dataset} />
+            <ChartBuilder dataset={dataset} />
           </CardContent>
         </Card>
 
