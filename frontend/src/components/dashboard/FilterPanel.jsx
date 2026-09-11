@@ -1,14 +1,6 @@
-import { RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { activeFilterCount, isFieldActive } from "@/lib/filter-data"
+import { cn } from "@/lib/utils"
+import { isFieldActive } from "@/lib/filter-data"
 
 const INPUT_CLASS =
   "h-10 w-full min-w-0 max-w-full rounded-lg border border-input bg-background px-3 text-sm shadow-none transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -162,12 +154,14 @@ function NumericGroup({ field, bounds, onBounds }) {
 }
 
 /**
- * Reusable dashboard filter area. Controlled via `filters` state owned by
- * the parent; all filtering math lives in `@/lib/filter-data`.
+ * Reusable dashboard filter controls. Controlled via `filters` state owned
+ * by the parent; all filtering math lives in `@/lib/filter-data`. This is
+ * presentation only — render it inside the FilterSheet drawer (or any other
+ * container) without duplicating filter JSX. Selection, bounds, blank-value
+ * ("(blank)"), AND-across-columns / OR-within-column, and instant updates
+ * all behave exactly as before; only the surrounding chrome moved.
  */
-export function FilterPanel({ fields, filters, onChange, onReset }) {
-  const count = activeFilterCount(filters)
-
+export function FilterPanelContent({ fields, filters, onChange }) {
   const toggleValue = (column, value) => {
     const selected = filters.categorical[column] ?? []
     onChange({
@@ -188,67 +182,47 @@ export function FilterPanel({ fields, filters, onChange, onReset }) {
     })
   }
 
+  if (!Array.isArray(fields) || fields.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No filterable columns in this dataset.
+      </p>
+    )
+  }
+
   return (
-    <Card className="min-w-0 border-border/70 bg-muted/20">
-      <CardHeader>
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <CardTitle>Filters</CardTitle>
-            <Badge variant={count > 0 ? "default" : "secondary"}>
-              {count > 0 ? `${count} active` : "All rows"}
-            </Badge>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onReset}
-            disabled={count === 0}
-          >
-            <RotateCcw aria-hidden="true" />
-            Clear filters
-          </Button>
-        </div>
-        <CardDescription>
-          Filter the uploaded dataset — KPIs, preview, and chart update
-          instantly. Nothing is sent back to the backend.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {fields.map((field) => (
-            <div
-              key={field.column}
-              className={
-                isFieldActive(filters, field)
-                  ? "min-w-0 rounded-lg ring-1 ring-ring"
-                  : "min-w-0"
-              }
-            >
-              {field.kind === "categorical" ? (
-                <CategoricalGroup
-                  field={field}
-                  selected={filters.categorical[field.column] ?? []}
-                  onToggle={toggleValue}
-                />
-              ) : field.kind === "datetime" ? (
-                <DatetimeGroup
-                  field={field}
-                  bounds={
-                    filters.datetime[field.column] ?? { from: "", to: "" }
-                  }
-                  onBounds={(column, next) => setBounds("datetime", column, next)}
-                />
-              ) : (
-                <NumericGroup
-                  field={field}
-                  bounds={filters.numeric[field.column] ?? { min: "", max: "" }}
-                  onBounds={(column, next) => setBounds("numeric", column, next)}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex min-w-0 flex-col">
+      {fields.map((field) => (
+        <section
+          key={field.column}
+          aria-label={`${field.column} filter`}
+          className={cn(
+            "min-w-0 border-b border-border/70 py-4 first:pt-0 last:border-b-0 last:pb-0",
+            isFieldActive(filters, field) &&
+              "-mx-2 rounded-lg px-2 ring-1 ring-ring",
+          )}
+        >
+          {field.kind === "categorical" ? (
+            <CategoricalGroup
+              field={field}
+              selected={filters.categorical[field.column] ?? []}
+              onToggle={toggleValue}
+            />
+          ) : field.kind === "datetime" ? (
+            <DatetimeGroup
+              field={field}
+              bounds={filters.datetime[field.column] ?? { from: "", to: "" }}
+              onBounds={(column, next) => setBounds("datetime", column, next)}
+            />
+          ) : (
+            <NumericGroup
+              field={field}
+              bounds={filters.numeric[field.column] ?? { min: "", max: "" }}
+              onBounds={(column, next) => setBounds("numeric", column, next)}
+            />
+          )}
+        </section>
+      ))}
+    </div>
   )
 }

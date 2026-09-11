@@ -1,7 +1,15 @@
-import { FileSpreadsheet, Upload } from "lucide-react"
+import { FileSpreadsheet, ListFilter, Upload } from "lucide-react"
+import { useMemo, useState } from "react"
 import { formatCount } from "@/lib/format"
+import {
+  activeFilterCount,
+  defaultFilterState,
+  getFilterFields,
+} from "@/lib/filter-data"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DashboardPlaceholder } from "@/components/dashboard/DashboardPlaceholder"
+import { FilterSheet } from "@/components/dashboard/FilterSheet"
 
 export function DashboardLayout({
   dataset,
@@ -11,6 +19,14 @@ export function DashboardLayout({
   onRemoveFile,
 }) {
   const hasDataset = Boolean(dataset)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // Same filter state the dashboard already uses — the drawer only presents
+  // it differently. No duplicated state, no second filtering system.
+  const fields = useMemo(() => getFilterFields(dataset), [dataset])
+  const showFilters = hasDataset && fields.length > 0
+  const filterCount = showFilters ? activeFilterCount(filters) : 0
+  const resetFilters = () => onFiltersChange(defaultFilterState(dataset))
 
   return (
     <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -43,18 +59,50 @@ export function DashboardLayout({
             )}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {hasDataset ? (
-            <Button variant="outline" size="sm" onClick={onRemoveFile}>
-              Remove file
+        <div className="flex min-w-0 shrink-0 flex-col gap-1.5 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {showFilters ? (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-haspopup="dialog"
+                onClick={() => setFiltersOpen(true)}
+              >
+                <ListFilter aria-hidden="true" />
+                Filters
+                {filterCount > 0 ? (
+                  <Badge variant="default">{filterCount}</Badge>
+                ) : null}
+              </Button>
+            ) : null}
+            {hasDataset ? (
+              <Button variant="outline" size="sm" onClick={onRemoveFile}>
+                Remove file
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={onBackToUpload}>
+              <Upload aria-hidden="true" />
+              {hasDataset ? "Upload new" : "Go to upload"}
             </Button>
+          </div>
+          {showFilters && filterCount > 0 ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {filterCount} filter{filterCount === 1 ? "" : "s"} active
+            </p>
           ) : null}
-          <Button size="sm" onClick={onBackToUpload}>
-            <Upload aria-hidden="true" />
-            {hasDataset ? "Upload new" : "Go to upload"}
-          </Button>
         </div>
       </div>
+
+      {showFilters ? (
+        <FilterSheet
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          fields={fields}
+          filters={filters}
+          onChange={onFiltersChange}
+          onReset={resetFilters}
+        />
+      ) : null}
 
       <div aria-label="Dataset dashboard" role="region" className="min-w-0">
         <DashboardPlaceholder

@@ -12,7 +12,6 @@ import {
   applyFilters,
   buildFilteredDataset,
   defaultFilterState,
-  getFilterFields,
   isFilterActive,
 } from "@/lib/filter-data"
 import { Badge } from "@/components/ui/badge"
@@ -26,7 +25,6 @@ import {
 import { EmptyState } from "@/components/states/EmptyState"
 import { Button } from "@/components/ui/button"
 import { ChartBuilder } from "@/components/charts/ChartBuilder"
-import { FilterPanel } from "@/components/dashboard/FilterPanel"
 import { KpiCard } from "@/components/dashboard/KpiCard"
 import { NumericSummary } from "@/components/dashboard/NumericSummary"
 
@@ -56,7 +54,6 @@ export function DashboardPlaceholder({
     () => (Array.isArray(dataset?.preview) ? dataset.preview : []),
     [dataset],
   )
-  const fields = useMemo(() => getFilterFields(dataset), [dataset])
   const filteredRows = useMemo(
     () => applyFilters(preview, filters),
     [preview, filters],
@@ -172,17 +169,7 @@ export function DashboardPlaceholder({
 
   return (
     <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
-      {/* 1. Filters */}
-      {fields.length > 0 ? (
-        <FilterPanel
-          fields={fields}
-          filters={filters}
-          onChange={onFiltersChange}
-          onReset={resetFilters}
-        />
-      ) : null}
-
-      {/* 2. KPI summary row */}
+      {/* 1. KPI summary row (filters live in the header drawer now) */}
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi) => (
           <KpiCard
@@ -195,7 +182,7 @@ export function DashboardPlaceholder({
         ))}
       </div>
 
-      {/* 3. Primary visualization */}
+      {/* 2. Primary visualization */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Chart</CardTitle>
@@ -218,7 +205,7 @@ export function DashboardPlaceholder({
         </CardContent>
       </Card>
 
-      {/* 4. Supporting analytics */}
+      {/* 3. Supporting analytics */}
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="min-w-0">
           <CardHeader>
@@ -278,7 +265,7 @@ export function DashboardPlaceholder({
         <NumericSummary rows={filteredRows} numericColumns={numericColumns} />
       </div>
 
-      {/* 5. Data preview */}
+      {/* 4. Data preview */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Data preview</CardTitle>
