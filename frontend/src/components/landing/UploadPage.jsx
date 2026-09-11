@@ -45,22 +45,61 @@ const STEPS = [
   {
     title: "Upload",
     description: "Choose a .csv file. It is sent to Flask for analysis.",
-    state: "Available now",
+    status: "Available now",
   },
   {
     title: "Preview",
     description: "Column types, stats, and row preview from the backend.",
-    state: "Available now",
+    status: "Available now",
   },
   {
     title: "Visualize",
     description: "Charts and tables arrive with the visualization layer.",
-    state: "Later",
+    status: "Coming later",
   },
 ]
 
+/**
+ * Single pipeline step. Availability is hidden by default and revealed on
+ * hover, keyboard focus, or touch tap (tapping a `tabIndex` element moves
+ * focus to it, triggering the same `focus-within` reveal — no hover
+ * required). The full text, including status, is always in the accessible
+ * name so screen-reader users never depend on the visual reveal.
+ */
+function PipelineStep({ index, title, description, status }) {
+  return (
+    <li
+      tabIndex={0}
+      aria-label={`${index + 1}. ${title}. ${description} Status: ${status}.`}
+      className="group flex min-w-0 items-start gap-3 rounded-lg border border-border px-3 py-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span
+        aria-hidden="true"
+        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold"
+      >
+        {index + 1}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs break-words text-muted-foreground sm:text-sm">
+          {description}
+        </p>
+        <p
+          aria-hidden="true"
+          className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-within:grid-rows-[1fr] group-focus-within:opacity-100 motion-reduce:transition-none"
+        >
+          <span className="min-w-0 overflow-hidden text-xs font-medium text-muted-foreground">
+            {status}
+          </span>
+        </p>
+      </div>
+    </li>
+  )
+}
+
 export function UploadPage({
   status,
+  wakeStartedAt,
   selectedFile,
   dataset,
   errorTitle,
@@ -144,6 +183,7 @@ export function UploadPage({
           <CardContent className="pt-5">
             <CsvUploadZone
               status={status}
+              wakeStartedAt={wakeStartedAt}
               selectedFile={selectedFile}
               dataset={dataset}
               errorTitle={errorTitle}
@@ -167,34 +207,13 @@ export function UploadPage({
           <CardContent>
             <ol className="flex min-w-0 flex-col gap-3">
               {STEPS.map((step, index) => (
-                <li
+                <PipelineStep
                   key={step.title}
-                  className="flex min-w-0 items-start gap-3 rounded-lg border border-border px-3 py-2.5"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold"
-                  >
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      {step.title}
-                      <Badge
-                        variant={
-                          step.state === "Available now"
-                            ? "default"
-                            : "secondary"
-                        }
-                      >
-                        {step.state}
-                      </Badge>
-                    </p>
-                    <p className="mt-0.5 text-xs break-words text-muted-foreground sm:text-sm">
-                      {step.description}
-                    </p>
-                  </div>
-                </li>
+                  index={index}
+                  title={step.title}
+                  description={step.description}
+                  status={step.status}
+                />
               ))}
             </ol>
             <ul className="mt-4 flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground sm:text-sm">

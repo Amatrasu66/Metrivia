@@ -9,9 +9,11 @@ import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
 // Upload lifecycle. "uploading" covers the fetch to POST /api/upload;
 // "analyzing" is shown only once the request has reached the backend
 // (slow responses) or the response has arrived (finalizing the dashboard).
-// "waking" means Render is still starting the free-tier backend.
+// "waking" means Render is still starting the free-tier backend, and
+// "wake-ready" is the brief success beat before the upload proceeds.
 const ANALYZING_GRACE_MS = 2500
 const ANALYZING_MIN_VISIBLE_MS = 350
+const WAKE_SUCCESS_MS = 1100
 
 const INVALID_FILE_TITLE = "We could not accept that file"
 const UPLOAD_FAILED_TITLE = "Could not process this file"
@@ -39,8 +41,11 @@ function delay(ms, signal) {
 
 export default function App() {
   const [view, setView] = useState("upload")
-  // idle | waking | uploading | analyzing | ready | error
+  // idle | waking | wake-ready | uploading | analyzing | ready | error
   const [status, setStatus] = useState("idle")
+  // Wall-clock moment the current backend wait started; drives the
+  // progressive cold-start timer. Reset on every new upload flow.
+  const [wakeStartedAt, setWakeStartedAt] = useState(null)
   const [selectedFile, setSelectedFile] = useState(null)
   // Dataset analysis payload returned by POST /api/upload (null until success).
   const [dataset, setDataset] = useState(null)
@@ -116,9 +121,11 @@ export default function App() {
     setErrorTitle("")
     setErrorMessage("")
     setCanRetryUpload(false)
+    setWakeStartedAt(Date.now())
     setStatus("uploading")
 
     let analyzingTimer = null
+    let didWake = false
     try {
       // Render Free may have stopped the backend after inactivity. Wait for
       // GET /api/health before sending the user's file; switch to the waking
@@ -126,10 +133,18 @@ export default function App() {
       await waitForBackendHealthy({
         signal,
         onWaking: () => {
+          didWake = true
           if (isCurrent()) setStatus("waking")
         },
       })
       if (!isCurrent()) return
+      if (didWake) {
+        // Cold start that recovered: show the brief "Backend ready" beat,
+        // then continue with the preserved File automatically.
+        setStatus("wake-ready")
+        await delay(WAKE_SUCCESS_MS, signal)
+        if (!isCurrent()) return
+      }
       setStatus("uploading")
 
       // While the upload request is pending, a slow response almost always
@@ -199,6 +214,7 @@ export default function App() {
     setErrorTitle("")
     setErrorMessage("")
     setCanRetryUpload(false)
+    setWakeStartedAt(null)
     setStatus("idle")
   }
 
@@ -209,6 +225,7 @@ export default function App() {
       {view === "upload" ? (
         <UploadPage
           status={status}
+          wakeStartedAt={wakeStartedAt}
           selectedFile={selectedFile}
           dataset={dataset}
           errorTitle={errorTitle}

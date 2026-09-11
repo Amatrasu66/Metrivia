@@ -4,11 +4,13 @@ import { cn } from "@/lib/utils"
 import { formatCount, formatFileSize } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { BackendWakeState } from "@/components/states/BackendWakeState"
 import { ErrorState } from "@/components/states/ErrorState"
 import { LoadingState } from "@/components/states/LoadingState"
 
 export function CsvUploadZone({
   status,
+  wakeStartedAt,
   selectedFile,
   dataset,
   errorTitle,
@@ -103,9 +105,18 @@ export function CsvUploadZone({
 
       <div aria-live="polite" className="flex min-w-0 flex-col gap-3">
         {status === "waking" ? (
-          <LoadingState
-            label="Starting the analysis server…"
-            description="Render is waking up the Metrivia backend. This may take up to a minute."
+          <BackendWakeState
+            key={wakeStartedAt ?? "waking"}
+            startedAt={wakeStartedAt}
+            phase="waking"
+          />
+        ) : null}
+
+        {status === "wake-ready" ? (
+          <BackendWakeState
+            key={wakeStartedAt ?? "wake-ready"}
+            startedAt={wakeStartedAt}
+            phase="ready"
           />
         ) : null}
 
