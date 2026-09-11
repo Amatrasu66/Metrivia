@@ -54,7 +54,14 @@ def _resolve_cors_origins(explicit=None):
     raw = os.environ.get("CORS_ORIGINS", "")
     if raw.strip() == "":
         return list(DEFAULT_DEV_ORIGINS)
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    # Strip whitespace and trailing slashes: browsers send
+    # `Origin: https://app.example.com` (no trailing slash), so a pasted
+    # value like "https://app.example.com/" would otherwise never match.
+    return [
+        origin.strip().rstrip("/")
+        for origin in raw.split(",")
+        if origin.strip().rstrip("/")
+    ]
 
 
 CORS_ORIGINS = _resolve_cors_origins()

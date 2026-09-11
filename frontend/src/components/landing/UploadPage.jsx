@@ -63,10 +63,12 @@ export function UploadPage({
   status,
   selectedFile,
   dataset,
+  errorTitle,
   errorMessage,
   onFilesSelected,
   onRemove,
   onDismissError,
+  onRetryUpload,
   onContinue,
   onViewDashboard,
 }) {
@@ -144,10 +146,12 @@ export function UploadPage({
               status={status}
               selectedFile={selectedFile}
               dataset={dataset}
+              errorTitle={errorTitle}
               errorMessage={errorMessage}
               onFilesSelected={onFilesSelected}
               onRemove={onRemove}
               onDismissError={onDismissError}
+              onRetryUpload={onRetryUpload}
               onContinue={onContinue}
             />
           </CardContent>

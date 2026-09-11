@@ -11,10 +11,12 @@ export function CsvUploadZone({
   status,
   selectedFile,
   dataset,
+  errorTitle,
   errorMessage,
   onFilesSelected,
   onRemove,
   onDismissError,
+  onRetryUpload,
   onContinue,
 }) {
   const inputRef = useRef(null)
@@ -40,7 +42,7 @@ export function CsvUploadZone({
           Upload a CSV file
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Sent to the local Flask backend for analysis. Files are not stored.
+          Sent to the Metrivia backend for analysis. Files are not stored.
         </p>
       </div>
 
@@ -89,7 +91,7 @@ export function CsvUploadZone({
         />
         <Button onClick={openFileDialog}>
           <Upload aria-hidden="true" />
-          Browse files
+          Upload CSV
         </Button>
 
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -100,15 +102,27 @@ export function CsvUploadZone({
       </div>
 
       <div aria-live="polite" className="flex min-w-0 flex-col gap-3">
-        {status === "loading" ? (
-          <LoadingState label="Uploading and analyzing…" />
+        {status === "waking" ? (
+          <LoadingState
+            label="Starting the analysis server…"
+            description="Render is waking up the Metrivia backend. This may take up to a minute."
+          />
+        ) : null}
+
+        {status === "uploading" || status === "loading" ? (
+          <LoadingState label="Uploading CSV…" />
+        ) : null}
+
+        {status === "analyzing" ? (
+          <LoadingState label="Analyzing your data…" />
         ) : null}
 
         {status === "error" ? (
           <ErrorState
-            title="We could not accept that file"
+            title={errorTitle || "Could not process this file"}
             message={errorMessage}
-            onRetry={openFileDialog}
+            onRetry={onRetryUpload ?? openFileDialog}
+            retryLabel={onRetryUpload ? "Try again" : undefined}
             onDismiss={onDismissError}
           />
         ) : null}
@@ -128,7 +142,7 @@ export function CsvUploadZone({
                 </p>
                 <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>{formatFileSize(selectedFile.size)}</span>
-                  <Badge>Analyzed</Badge>
+                  <Badge>Dashboard ready</Badge>
                 </p>
                 {dataset ? (
                   <p className="mt-1 text-xs text-muted-foreground">

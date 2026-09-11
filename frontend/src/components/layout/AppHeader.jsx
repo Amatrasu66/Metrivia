@@ -3,6 +3,8 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { BackendStatusIndicator } from "@/components/system/BackendStatus"
+import { useBackendStatus } from "@/hooks/useBackendStatus"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 
 const NAV_ITEMS = [
@@ -35,6 +37,9 @@ export function BrandMark({ compact = false }) {
 
 export function AppHeader({ activeView, onNavigate }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // Single health subscription shared by the desktop and mobile pills
+  // (both stay mounted; separate hooks would double every request).
+  const { status: backendStatus, retry: retryBackendCheck } = useBackendStatus()
 
   const handleNavigate = (view) => {
     onNavigate(view)
@@ -61,12 +66,22 @@ export function AppHeader({ activeView, onNavigate }) {
           <Badge variant="outline" className="ml-2 hidden lg:inline-flex">
             Frontend shell
           </Badge>
+          <BackendStatusIndicator
+            status={backendStatus}
+            onRetry={retryBackendCheck}
+            className="ml-2"
+          />
           <span className="ml-1">
             <ThemeToggle />
           </span>
         </nav>
 
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex min-w-0 items-center gap-2 md:hidden">
+          <BackendStatusIndicator
+            status={backendStatus}
+            onRetry={retryBackendCheck}
+            className="min-w-0"
+          />
           <ThemeToggle />
           <Button
             variant="outline"

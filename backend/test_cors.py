@@ -121,5 +121,69 @@ class OverrideTest(unittest.TestCase):
                 os.environ["CORS_ORIGINS"] = previous
 
 
+class ProductionOriginTest(unittest.TestCase):
+    """Simulates the Render deployment: CORS_ORIGINS set to the exact
+    production Vercel origin. Both endpoints must reflect it."""
+
+    PROD_ORIGIN = "https://metrivia.vercel.app"
+
+    def _prod_client(self):
+        previous = os.environ.get("CORS_ORIGINS")
+        # Include a trailing slash + extra whitespace to prove normalization.
+        os.environ["CORS_ORIGINS"] = f"  {self.PROD_ORIGIN}/  "
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("CORS_ORIGINS", None)
+                if previous is None
+                else os.environ.update({"CORS_ORIGINS": previous})
+            )
+        )
+        return create_app().test_client()
+
+    def test_health_reflects_production_origin(self):
+        resp = self._prod_client().get(
+            "/api/health", headers={"Origin": self.PROD_ORIGIN}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.headers.get("Access-Control-Allow-Origin"), self.PROD_ORIGIN
+        )
+
+    def test_upload_preflight_reflects_production_origin(self):
+        resp = self._prod_client().options(
+            "/api/upload",
+            headers={
+                "Origin": self.PROD_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.headers.get("Access-Control-Allow-Origin"), self.PROD_ORIGIN
+        )
+
+    def test_upload_post_reflects_production_origin(self):
+        import io
+
+        resp = self._prod_client().post(
+            "/api/upload",
+            data={"file": (io.BytesIO(SAMPLE_CSV), "sample.csv")},
+            headers={"Origin": self.PROD_ORIGIN},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.headers.get("Access-Control-Allow-Origin"), self.PROD_ORIGIN
+        )
+
+    def test_prod_config_no_longer_allows_dev_origin(self):
+        resp = self._prod_client().get(
+            "/api/health", headers={"Origin": ORIGIN_5173}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.headers.get("Access-Control-Allow-Origin"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

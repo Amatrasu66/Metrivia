@@ -1,7 +1,13 @@
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-export function ErrorState({ title, message, onRetry, onDismiss }) {
+export function ErrorState({
+  title,
+  message,
+  onRetry,
+  retryLabel = "Choose a different file",
+  onDismiss,
+}) {
   return (
     <div
       role="alert"
@@ -27,7 +33,7 @@ export function ErrorState({ title, message, onRetry, onDismiss }) {
         <div className="flex flex-wrap items-center gap-2 pl-12">
           {onRetry ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Choose a different file
+              {retryLabel}
             </Button>
           ) : null}
           {onDismiss ? (
