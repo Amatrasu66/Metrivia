@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { formatCount, formatFileSize } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { BackendWakeState } from "@/components/states/BackendWakeState"
 import { ErrorState } from "@/components/states/ErrorState"
 import { LoadingState } from "@/components/states/LoadingState"
@@ -23,8 +24,17 @@ export function CsvUploadZone({
 }) {
   const inputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
+  const { tap } = useMetriviaHaptics()
 
-  const openFileDialog = () => inputRef.current?.click()
+  const openFileDialog = () => {
+    tap()
+    inputRef.current?.click()
+  }
+
+  const handleContinue = () => {
+    tap()
+    onContinue()
+  }
 
   const handleDrop = (event) => {
     event.preventDefault()
@@ -169,7 +179,7 @@ export function CsvUploadZone({
                 <X aria-hidden="true" />
                 Remove
               </Button>
-              <Button size="sm" onClick={onContinue}>
+              <Button size="sm" onClick={handleContinue}>
                 Continue to dashboard
               </Button>
             </div>

@@ -8,6 +8,7 @@ import {
 } from "@/lib/filter-data"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { DashboardPlaceholder } from "@/components/dashboard/DashboardPlaceholder"
 import { FilterSheet } from "@/components/dashboard/FilterSheet"
 
@@ -20,6 +21,7 @@ export function DashboardLayout({
 }) {
   const hasDataset = Boolean(dataset)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const { tap } = useMetriviaHaptics()
 
   // Same filter state the dashboard already uses — the drawer only presents
   // it differently. No duplicated state, no second filtering system.
@@ -27,6 +29,19 @@ export function DashboardLayout({
   const showFilters = hasDataset && fields.length > 0
   const filterCount = showFilters ? activeFilterCount(filters) : 0
   const resetFilters = () => onFiltersChange(defaultFilterState(dataset))
+
+  // Opening the drawer is the meaningful gesture: this single tap covers
+  // both the Filters button feedback and the drawer-open feedback, so the
+  // same interaction never fires twice.
+  const handleOpenFilters = () => {
+    tap()
+    setFiltersOpen(true)
+  }
+
+  const handleBackToUpload = () => {
+    tap()
+    onBackToUpload()
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -66,7 +81,7 @@ export function DashboardLayout({
                 variant="outline"
                 size="sm"
                 aria-haspopup="dialog"
-                onClick={() => setFiltersOpen(true)}
+                onClick={handleOpenFilters}
               >
                 <ListFilter aria-hidden="true" />
                 Filters
@@ -80,7 +95,7 @@ export function DashboardLayout({
                 Remove file
               </Button>
             ) : null}
-            <Button size="sm" onClick={onBackToUpload}>
+            <Button size="sm" onClick={handleBackToUpload}>
               <Upload aria-hidden="true" />
               {hasDataset ? "Upload new" : "Go to upload"}
             </Button>

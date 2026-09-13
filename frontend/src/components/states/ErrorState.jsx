@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 
 export function ErrorState({
   title,
@@ -8,6 +9,18 @@ export function ErrorState({
   retryLabel = "Choose a different file",
   onDismiss,
 }) {
+  const { tap } = useMetriviaHaptics()
+
+  const handleRetry = () => {
+    tap()
+    onRetry()
+  }
+
+  const handleDismiss = () => {
+    tap()
+    onDismiss()
+  }
+
   return (
     <div
       role="alert"
@@ -32,12 +45,12 @@ export function ErrorState({
       {onRetry || onDismiss ? (
         <div className="flex flex-wrap items-center gap-2 pl-12">
           {onRetry ? (
-            <Button variant="outline" size="sm" onClick={onRetry}>
+            <Button variant="outline" size="sm" onClick={handleRetry}>
               {retryLabel}
             </Button>
           ) : null}
           {onDismiss ? (
-            <Button variant="ghost" size="sm" onClick={onDismiss}>
+            <Button variant="ghost" size="sm" onClick={handleDismiss}>
               Dismiss
             </Button>
           ) : null}

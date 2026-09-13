@@ -1,6 +1,7 @@
 import { BarChart3, Menu, X } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
@@ -35,10 +36,17 @@ export function BrandMark({ compact = false }) {
 
 export function AppHeader({ activeView, onNavigate }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { tap } = useMetriviaHaptics()
 
   const handleNavigate = (view) => {
+    tap()
     onNavigate(view)
     setMenuOpen(false)
+  }
+
+  const handleMenuToggle = () => {
+    tap()
+    setMenuOpen((open) => !open)
   }
 
   return (
@@ -74,7 +82,7 @@ export function AppHeader({ activeView, onNavigate }) {
             aria-expanded={menuOpen}
             aria-controls="mobile-nav"
             aria-label={menuOpen ? "Close menu" : "Open menu"}
-            onClick={() => setMenuOpen((open) => !open)}
+            onClick={handleMenuToggle}
           >
             {menuOpen ? <X /> : <Menu />}
           </Button>

@@ -1,6 +1,7 @@
 import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import {
   THEMES,
   applyTheme,
@@ -15,6 +16,7 @@ import {
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState(() => resolveInitialTheme())
+  const { tap } = useMetriviaHaptics()
 
   useEffect(() => {
     applyTheme(theme)
@@ -23,6 +25,11 @@ export function ThemeToggle() {
   const next = oppositeTheme(theme)
   const label = `Switch to ${next} mode`
 
+  const handleToggle = () => {
+    tap()
+    setTheme(next)
+  }
+
   return (
     <Button
       variant="ghost"
@@ -30,7 +37,7 @@ export function ThemeToggle() {
       type="button"
       aria-label={label}
       title={label}
-      onClick={() => setTheme(next)}
+      onClick={handleToggle}
     >
       {theme === THEMES.DARK ? (
         <Sun aria-hidden="true" />

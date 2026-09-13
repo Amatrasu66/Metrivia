@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { cn } from "@/lib/utils"
 import { isFieldActive } from "@/lib/filter-data"
 
@@ -162,7 +163,10 @@ function NumericGroup({ field, bounds, onBounds }) {
  * all behave exactly as before; only the surrounding chrome moved.
  */
 export function FilterPanelContent({ fields, filters, onChange }) {
+  const { select } = useMetriviaHaptics()
+
   const toggleValue = (column, value) => {
+    select()
     const selected = filters.categorical[column] ?? []
     onChange({
       ...filters,
@@ -176,6 +180,7 @@ export function FilterPanelContent({ fields, filters, onChange }) {
   }
 
   const setBounds = (kind, column, next) => {
+    select()
     onChange({
       ...filters,
       [kind]: { ...filters[kind], [column]: next },

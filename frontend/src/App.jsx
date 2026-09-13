@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
 import { defaultFilterState } from "@/lib/filter-data"
 import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
@@ -57,6 +58,14 @@ export default function App() {
   const [canRetryUpload, setCanRetryUpload] = useState(false)
   const abortRef = useRef(null)
   const flowRef = useRef(0)
+  const { success: hapticSuccess, error: hapticError } = useMetriviaHaptics()
+  // Haptic guards: each success/error/wake-ready beat must fire exactly once
+  // per event, never on re-renders. Object/key identity (not status alone)
+  // is what makes the guards Strict Mode safe.
+  const lastSuccessDatasetRef = useRef(null)
+  const lastWakeReadyKeyRef = useRef(null)
+  const lastErrorKeyRef = useRef(null)
+  const prevStatusRef = useRef("idle")
   // The actual File being uploaded, preserved across backend cold starts so
   // "Try again" never forces the user to re-choose the CSV.
   const pendingFileRef = useRef(null)
@@ -67,6 +76,46 @@ export default function App() {
       abortRef.current?.abort()
     }
   }, [])
+
+  // CSV analysis success: fire once per successful operation. `dataset` is a
+  // fresh object per success, so identity comparison suppresses re-renders
+  // and Strict Mode double-effects.
+  useEffect(() => {
+    if (status === "ready" && dataset && lastSuccessDatasetRef.current !== dataset) {
+      lastSuccessDatasetRef.current = dataset
+      hapticSuccess()
+    }
+  }, [status, dataset, hapticSuccess])
+
+  // Backend cold-start recovery: `wake-ready` only exists when the flow
+  // actually went through waking (immediately-available backends never enter
+  // it), so firing here means a real waking → ready transition. Keyed by the
+  // flow's start timestamp so polling/re-renders cannot refire it, and the
+  // existing animation/timing is untouched.
+  useEffect(() => {
+    if (
+      status === "wake-ready" &&
+      lastWakeReadyKeyRef.current !== wakeStartedAt
+    ) {
+      lastWakeReadyKeyRef.current = wakeStartedAt
+      hapticSuccess()
+    }
+  }, [status, wakeStartedAt, hapticSuccess])
+
+  // User-facing errors: fire once per error event. The status-transition
+  // check covers new errors; the message-key check covers consecutive errors
+  // without an intermediate status change.
+  useEffect(() => {
+    if (status === "error") {
+      const key = `${errorTitle}::${errorMessage}`
+      const transitioned = prevStatusRef.current !== "error"
+      if (transitioned || lastErrorKeyRef.current !== key) {
+        lastErrorKeyRef.current = key
+        hapticError()
+      }
+    }
+    prevStatusRef.current = status
+  }, [status, errorTitle, errorMessage, hapticError])
 
   const handleNavigate = (nextView) => {
     setView(nextView)

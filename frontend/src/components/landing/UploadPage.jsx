@@ -19,6 +19,7 @@ import { CsvUploadZone } from "@/components/upload/CsvUploadZone"
 import { EmptyState } from "@/components/states/EmptyState"
 import { ErrorState } from "@/components/states/ErrorState"
 import { LoadingState } from "@/components/states/LoadingState"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 
 const HIGHLIGHTS = [
   {
@@ -111,11 +112,19 @@ export function UploadPage({
   onContinue,
   onViewDashboard,
 }) {
+  const { tap } = useMetriviaHaptics()
+
   const scrollToUpload = () => {
+    tap()
     document
       .getElementById("upload-card")
       ?.scrollIntoView({ behavior: "smooth", block: "start" })
     document.getElementById("csv-file-input")?.focus({ preventScroll: true })
+  }
+
+  const handleViewDashboard = () => {
+    tap()
+    onViewDashboard()
   }
 
   return (
@@ -147,7 +156,7 @@ export function UploadPage({
           <Button
             size="lg"
             variant="outline"
-            onClick={onViewDashboard}
+            onClick={handleViewDashboard}
             className="w-full sm:w-auto"
           >
             View dashboard layout
@@ -316,7 +325,7 @@ export function UploadPage({
           </div>
           <Button
             variant="outline"
-            onClick={onViewDashboard}
+            onClick={handleViewDashboard}
             className="w-full shrink-0 sm:w-auto"
           >
             Open dashboard

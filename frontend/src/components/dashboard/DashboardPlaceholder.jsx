@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card"
 import { EmptyState } from "@/components/states/EmptyState"
 import { Button } from "@/components/ui/button"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ChartBuilder } from "@/components/charts/ChartBuilder"
 import { KpiCard } from "@/components/dashboard/KpiCard"
 import { NumericSummary } from "@/components/dashboard/NumericSummary"
@@ -46,6 +47,7 @@ export function DashboardPlaceholder({
 }) {
   // Hooks stay above the early return. All helpers tolerate a null
   // dataset; the empty branch below renders before any of it is used.
+  const { tap } = useMetriviaHaptics()
   const columns = useMemo(
     () => (Array.isArray(dataset?.columns) ? dataset.columns : []),
     [dataset],
@@ -71,13 +73,17 @@ export function DashboardPlaceholder({
   )
 
   if (!dataset) {
+    const handleUpload = () => {
+      tap()
+      onUpload()
+    }
     return (
       <div className="flex min-w-0 flex-col gap-4">
         <EmptyState
           title="No dataset selected"
           description="Upload a CSV to see filters, KPIs, charts, and a data table. Placeholders below show where each module will live."
           action={
-            <Button onClick={onUpload}>
+            <Button onClick={handleUpload}>
               <FileSpreadsheet aria-hidden="true" />
               Go to upload
             </Button>
@@ -108,7 +114,10 @@ export function DashboardPlaceholder({
   // Global filters: the uploaded dataset stays immutable; everything below
   // derives from the filtered rows without another backend request.
   const filtersActive = isFilterActive(filters)
-  const resetFilters = () => onFiltersChange(defaultFilterState(dataset))
+  const resetFilters = () => {
+    tap()
+    onFiltersChange(defaultFilterState(dataset))
+  }
 
   const rowCount = Number(dataset.row_count) || 0
   const columnCount = Number(dataset.column_count) || columns.length

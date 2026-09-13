@@ -3,6 +3,7 @@ import { FilterPanelContent } from "@/components/dashboard/FilterPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { activeFilterCount } from "@/lib/filter-data"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import {
   Sheet,
   SheetBody,
@@ -29,6 +30,21 @@ export function FilterSheet({
   onReset,
 }) {
   const count = activeFilterCount(filters)
+  const { tap } = useMetriviaHaptics()
+
+  const handleReset = () => {
+    tap()
+    onReset()
+  }
+
+  const handleDone = () => {
+    tap()
+    onOpenChange(false)
+  }
+
+  const handleClose = () => {
+    tap()
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -47,7 +63,7 @@ export function FilterSheet({
               {count > 0 ? (
                 <button
                   type="button"
-                  onClick={onReset}
+                  onClick={handleReset}
                   className="rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Clear all
@@ -55,7 +71,7 @@ export function FilterSheet({
               ) : null}
             </div>
           </div>
-          <SheetClose />
+          <SheetClose onClick={handleClose} />
         </SheetHeader>
 
         <SheetBody>
@@ -70,13 +86,13 @@ export function FilterSheet({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onReset}
+            onClick={handleReset}
             disabled={count === 0}
           >
             <RotateCcw aria-hidden="true" />
             Clear all
           </Button>
-          <Button size="sm" onClick={() => onOpenChange(false)}>
+          <Button size="sm" onClick={handleDone}>
             Done
           </Button>
         </SheetFooter>
