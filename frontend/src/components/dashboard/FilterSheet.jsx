@@ -3,6 +3,7 @@ import { FilterPanelContent } from "@/components/dashboard/FilterPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { activeFilterCount } from "@/lib/filter-data"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import {
   Sheet,
@@ -64,9 +65,12 @@ export function FilterSheet({
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Clear all
+                  {/* iOS direct-touch haptic over this button's exact
+                      bounds. Null on Android/desktop. */}
+                  <IosHapticSwitch onActivate={handleReset} />
                 </button>
               ) : null}
             </div>

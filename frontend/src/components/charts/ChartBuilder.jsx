@@ -12,6 +12,7 @@ import {
   transformChartData,
 } from "@/lib/chart-data"
 import { FieldSelect } from "@/components/charts/FieldSelect"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { AreaChartView } from "@/components/charts/views/AreaChartView"
 import { BarChartView } from "@/components/charts/views/BarChartView"
@@ -86,13 +87,21 @@ export function ChartBuilder({ dataset, emptyAction = null }) {
               aria-pressed={config.chartType === type.id}
               onClick={() => handleChartTypeChange(type.id)}
               className={cn(
-                "h-9 shrink-0 rounded-lg border px-3.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "relative h-9 shrink-0 rounded-lg border px-3.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 config.chartType === type.id
                   ? "border-transparent bg-primary text-primary-foreground"
                   : "border-input bg-background hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {type.label}
+              {/* iOS direct-touch haptic only on actionable (inactive)
+                  types: re-tapping the active type stays silent. Null on
+                  Android/desktop. */}
+              {config.chartType !== type.id ? (
+                <IosHapticSwitch
+                  onActivate={() => handleChartTypeChange(type.id)}
+                />
+              ) : null}
             </button>
           ))}
         </div>

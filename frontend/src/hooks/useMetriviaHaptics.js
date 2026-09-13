@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { useWebHaptics } from "web-haptics/react"
+import { isIosTouchDevice } from "@/lib/is-ios"
 
 /**
  * Metrivia-specific haptic feedback abstraction.
@@ -67,22 +68,21 @@ import { useWebHaptics } from "web-haptics/react"
  *   `navigator.vibrate()` pattern, so the stronger intensities above
  *   directly mean more motor on-time. Using the library (instead of calling
  *   `navigator.vibrate()` ourselves) is what keeps this cross-platform.
- * - iOS (Safari): iOS does not expose `navigator.vibrate`. The library's
- *   fallback appends a hidden `<label>Haptic feedback<input type="checkbox"
- *   switch></label>` to the body (both elements `display: none` when
- *   `showSwitch` is off, as configured here) and programmatically
- *   `.click()`s it on the pattern timeline. Two honest limitations follow:
- *   (1) iOS provides a fixed native switch tick per actuation — there is
- *   no API for custom intensity/duration, so iOS can never reproduce the
- *   Android intensity curve; (2) higher per-vibration intensity still helps
- *   on iOS because the library re-actuates the switch every
- *   `16 + (1 - intensity) * 184` ms during a segment, so stronger patterns
- *   produce denser actuation (e.g. error ≈ 9 actuations vs 6 before).
- *   No direct-interaction overlay switch was added: intercepting real taps
- *   with a transparent native control could not be verified without
- *   hardware and risks double activation, broken focus/AT behavior, and
- *   invisible hit-areas — while async beats (success/error/wake-ready)
- *   have no tap to intercept at all.
+ * - iOS (Safari): iOS does not expose `navigator.vibrate`, and current
+ *   iOS/WebKit no longer reliably produces a haptic from a programmatic
+ *   `.click()` on the library's hidden switch — the native switch must
+ *   receive the user's direct touch. That path lives in `IosHapticSwitch`:
+ *   a real, full-bounds, `opacity: 0` (never `display: none`) native
+ *   `<input type="checkbox" switch>` rendered inside tappable controls on
+ *   iOS only. One physical tap toggles it (native tick) and fires the
+ *   existing action exactly once via `onChange`, while the bubbled click is
+ *   stopped. Accordingly, every action in this hook is a silent no-op on
+ *   iOS: gesture haptics come from the native toggle (so a tick can never
+ *   double), and gesture-less events (success/error/wake-ready) are
+ *   legitimately silent there. Honest iOS limitations: one fixed native
+ *   tick per toggle — no custom intensity/duration — and no haptics for
+ *   async events, native selects, filter inputs, or chart marks (SVG cannot
+ *   host the switch; those stay Android-only).
  * - Desktop / unsupported browsers: the library no-ops internally, and
  *   every action below is wrapped in try/catch with promise rejection
  *   swallowing, so haptics can never throw an application-level error or
@@ -170,31 +170,38 @@ export function useMetriviaHaptics() {
   // Defaults keep `debug`/`showSwitch` off, so no audio fallback and no
   // visible toggle is ever rendered for normal users.
   const { trigger, isSupported } = useWebHaptics()
+  // iOS delivers gesture haptics through the direct-touch native switch
+  // (`IosHapticSwitch`), never through programmatic trigger calls — and
+  // async events (success/error/wake-ready) have no gesture to attach to,
+  // so they are legitimately silent there. Suppressing the programmatic
+  // path on iOS also guarantees a native tick can never double with a
+  // library tick for the same tap. Android/desktop behavior is unchanged.
+  const iosDirect = useMemo(() => isIosTouchDevice(), [])
 
-  const tap = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.tap),
-    [trigger],
-  )
-  const select = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.select),
-    [trigger],
-  )
-  const chartSelect = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.chartSelect),
-    [trigger],
-  )
-  const success = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.success),
-    [trigger],
-  )
-  const error = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.error),
-    [trigger],
-  )
-  const warning = useCallback(
-    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.warning),
-    [trigger],
-  )
+  const tap = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.tap)
+  }, [trigger, iosDirect])
+  const select = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.select)
+  }, [trigger, iosDirect])
+  const chartSelect = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.chartSelect)
+  }, [trigger, iosDirect])
+  const success = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.success)
+  }, [trigger, iosDirect])
+  const error = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.error)
+  }, [trigger, iosDirect])
+  const warning = useCallback(() => {
+    if (iosDirect) return
+    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.warning)
+  }, [trigger, iosDirect])
 
   return useMemo(
     () => ({ tap, select, chartSelect, success, error, warning, isSupported }),

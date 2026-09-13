@@ -1,5 +1,6 @@
 import { cva } from "class-variance-authority"
 import { cn } from "@/lib/utils"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 
 const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
@@ -32,14 +33,24 @@ export function Button({
   variant = "default",
   size = "default",
   type = "button",
+  onClick,
+  disabled,
+  children,
   ...props
 }) {
   return (
     <button
       type={type}
       data-slot="button"
-      className={cn(buttonVariants({ variant, size }), className)}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(buttonVariants({ variant, size }), "relative", className)}
       {...props}
-    />
+    >
+      {children}
+      {/* iOS only: direct-touch native switch covering this button's exact
+          bounds. Null on Android/desktop. See IosHapticSwitch. */}
+      <IosHapticSwitch onActivate={onClick} disabled={disabled} />
+    </button>
   )
 }
