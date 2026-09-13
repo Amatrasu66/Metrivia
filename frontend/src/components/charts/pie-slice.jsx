@@ -2,6 +2,7 @@
 import { arc as arcGenerator } from "@visx/shape";
 import { motion, useSpring, useTransform } from "motion/react";
 import { memo, useEffect } from "react";
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics";
 import { usePieHover, usePieStable } from "./pie-context";
 import { useEnterComplete } from "./use-enter-complete";
 import { useMountProgress } from "./use-mount-progress";
@@ -273,6 +274,11 @@ export const PieSlice = memo(function PieSlice({
   } = usePieStable();
   const { hoveredIndex, setHoveredIndex } = usePieHover();
 
+  // Haptic-only tap on the existing hover hitbox: no visual/state change,
+  // hover highlight and tooltip behavior untouched. `select` is a stable
+  // reference, so this memo stays intact.
+  const { select } = useMetriviaHaptics();
+
   // Use prop if provided, otherwise use context value
   const hoverOffset = hoverOffsetProp ?? contextHoverOffset;
 
@@ -426,6 +432,7 @@ export const PieSlice = memo(function PieSlice({
       <path
         d={hitboxPath}
         fill="transparent"
+        onClick={select}
         onMouseEnter={() => setHoveredIndex(index)}
         onMouseLeave={() => setHoveredIndex(null)}
       />

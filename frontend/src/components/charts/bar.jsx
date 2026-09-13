@@ -2,6 +2,7 @@
 import { motion } from "motion/react";
 import { memo, useId, useMemo } from "react";
 import { barDepthAndRise, barDepthMaxDepth } from "./bar-depth-geometry";
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics";
 import {
   chartCssVars,
   useChart,
@@ -52,6 +53,9 @@ function AnimatedBar({
   isHorizontal
 }) {
   const enterAnim = transitionWithDelay(enterTransition, index * staggerDelay);
+  // Haptic-only tap: no visual/state change, existing hover/tooltip
+  // behavior untouched. `select` is a stable reference.
+  const { select } = useMetriviaHaptics();
 
   if (animationType === "fade") {
     return (
@@ -64,6 +68,7 @@ function AnimatedBar({
         height={height}
         initial={{ opacity: 0, filter: "blur(2px)" }}
         key={`fade-${index}-${revealEpoch}`}
+        onClick={select}
         rx={rx}
         ry={ry}
         transition={enterAnim}
@@ -91,6 +96,7 @@ function AnimatedBar({
         fill={fill}
         initial={initial}
         key={`grow-${index}-${revealEpoch}`}
+        onClick={select}
         rx={rx}
         ry={ry}
         transition={enterAnim}
@@ -144,6 +150,10 @@ const BarInner = memo(function BarInner({
 
   // Find the index of this bar series among all bar series
   const { hoveredIndex: legendHoveredIndex } = useChartLegendHover();
+
+  // Haptic-only tap on each bar (see AnimatedBar): stable reference, so the
+  // memo on this component is unaffected and no visual/state change occurs.
+  const { select } = useMetriviaHaptics();
 
   const seriesIndex = useMemo(() => {
     const idx = lines.findIndex((l) => l.dataKey === dataKey);
@@ -349,6 +359,7 @@ const BarInner = memo(function BarInner({
             fill={fill}
             height={barHeight}
             key={barKey}
+            onClick={select}
             opacity={isFaded ? fadedOpacity : 1}
             rx={effectiveRx}
             ry={effectiveRy}

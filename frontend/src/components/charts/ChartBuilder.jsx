@@ -12,6 +12,7 @@ import {
   transformChartData,
 } from "@/lib/chart-data"
 import { FieldSelect } from "@/components/charts/FieldSelect"
+import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { AreaChartView } from "@/components/charts/views/AreaChartView"
 import { BarChartView } from "@/components/charts/views/BarChartView"
 import { LineChartView } from "@/components/charts/views/LineChartView"
@@ -39,6 +40,7 @@ const VIEW_BY_TYPE = {
  */
 export function ChartBuilder({ dataset, emptyAction = null }) {
   const [config, setConfig] = useState(() => defaultChartConfig(dataset))
+  const { select } = useMetriviaHaptics()
 
   // A new upload replaces the file: restart from fresh defaults. Filter
   // changes only swap the dataset object, so they must not reset config.
@@ -62,6 +64,14 @@ export function ChartBuilder({ dataset, emptyAction = null }) {
   const isCount = config.aggregation === "count"
   const ChartView = VIEW_BY_TYPE[config.chartType] ?? BarChartView
 
+  // Discrete chart-type change only: re-selecting the active type is a
+  // no-op state-wise (aria-pressed is already true), so it stays silent.
+  const handleChartTypeChange = (typeId) => {
+    if (typeId === config.chartType) return
+    select()
+    setConfig((prev) => coerceConfigForType(dataset, prev, typeId))
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <fieldset className="flex min-w-0 flex-col gap-1.5">
@@ -74,9 +84,7 @@ export function ChartBuilder({ dataset, emptyAction = null }) {
               key={type.id}
               type="button"
               aria-pressed={config.chartType === type.id}
-              onClick={() =>
-                setConfig((prev) => coerceConfigForType(dataset, prev, type.id))
-              }
+              onClick={() => handleChartTypeChange(type.id)}
               className={cn(
                 "h-9 shrink-0 rounded-lg border px-3.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 config.chartType === type.id
