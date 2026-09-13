@@ -275,9 +275,9 @@ export const PieSlice = memo(function PieSlice({
   const { hoveredIndex, setHoveredIndex } = usePieHover();
 
   // Haptic-only tap on the existing hover hitbox: no visual/state change,
-  // hover highlight and tooltip behavior untouched. `select` is a stable
-  // reference, so this memo stays intact.
-  const { select } = useMetriviaHaptics();
+  // hover highlight and tooltip behavior untouched. `chartSelect` is a
+  // stable reference, so this memo stays intact.
+  const { chartSelect } = useMetriviaHaptics();
 
   // Use prop if provided, otherwise use context value
   const hoverOffset = hoverOffsetProp ?? contextHoverOffset;
@@ -432,7 +432,7 @@ export const PieSlice = memo(function PieSlice({
       <path
         d={hitboxPath}
         fill="transparent"
-        onClick={select}
+        onClick={chartSelect}
         onMouseEnter={() => setHoveredIndex(index)}
         onMouseLeave={() => setHoveredIndex(null)}
       />

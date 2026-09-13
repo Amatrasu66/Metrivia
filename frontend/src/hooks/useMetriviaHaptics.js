@@ -14,8 +14,9 @@ import { useWebHaptics } from "web-haptics/react"
  *       ↓
  *   iOS / Android browser haptics
  *
- * Components must call the semantic actions (`tap`, `select`, `success`,
- * `error`, `warning`) and never import `web-haptics` directly, so the
+ * Components must call the semantic actions (`tap`, `select`,
+ * `chartSelect`, `success`, `error`, `warning`) and never import
+ * `web-haptics` directly, so the
  * library can be replaced later without touching every component. The
  * intensity lives here, not at the call sites: `tap()` is correct,
  * `trigger("light", { intensity: 0.8 })` in a component is not.
@@ -39,6 +40,26 @@ import { useWebHaptics } from "web-haptics/react"
  *   Nothing is long or continuous (longest total: error at 200 ms); only
  *   `error` uses intensity 1.0. Hierarchy is preserved:
  *   select < tap < warning / success / error.
+ *
+ * Why `chartSelect()` exists alongside `select()`:
+ * - Inspection proved every analytics interaction (chart type, dimension,
+ *   measure, aggregation, bars, pie slices) already called the exact
+ *   strengthened `select()` pattern — the pattern was never the problem.
+ * - The real cause is masking: each of those interactions fires at the
+ *   exact onset of a visual transient (full chart re-transform + reveal
+ *   replay, tooltip pop-in with sibling dimming, OS picker dismissal),
+ *   while the filter-drawer baseline fires in a visually quiet context.
+ *   A threshold-level 10 ms tick gets perceptually buried under the
+ *   transient, so analytics selections need more on-time for the SAME
+ *   perceived strength (not a stronger feeling — an equal one).
+ * - `chartSelect` is a single short tick of the same character (never a
+ *   double-tap, never `tap`'s pattern). Measured Android output:
+ *     chartSelect → vibrate [15, 5]  (15 ms on-time)
+ *   Hierarchy stays intact: select (10 ms) < chartSelect (15 ms) < tap
+ *   (19 ms) < warning / success / error. On iOS both `select` and
+ *   `chartSelect` remain a single native switch tick (fixed-tick
+ *   limitation); the denser 0.75 actuation interval is the most the
+ *   existing mechanism can express.
  *
  * Cross-platform notes:
  * - Android (Chrome and other supported browsers): `web-haptics` converts
@@ -91,8 +112,14 @@ export const METRIVIA_HAPTIC_PATTERNS = {
   // toggle, and navigation. Target intensity 0.70–0.80.
   tap: [{ duration: 25, intensity: 0.75 }],
   // Deliberate tactile click for filter value changes; clearly perceptible
-  // but lighter than tap. Target intensity 0.60–0.70.
+  // but lighter than tap. Target intensity 0.60–0.70. This is the quiet-
+  // context baseline — analytics interactions that fire under a visual
+  // transient use chartSelect instead (see module comment).
   select: [{ duration: 15, intensity: 0.65 }],
+  // Same single-tick character as select, with more on-time so chart
+  // configuration and chart-mark taps survive visual-transient masking and
+  // read at the same perceived strength as the select baseline.
+  chartSelect: [{ duration: 20, intensity: 0.75 }],
   // Unmistakable ascending two-tap for completed operations. Stronger first
   // tap than the preset; no long buzz.
   success: [
@@ -152,6 +179,10 @@ export function useMetriviaHaptics() {
     () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.select),
     [trigger],
   )
+  const chartSelect = useCallback(
+    () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.chartSelect),
+    [trigger],
+  )
   const success = useCallback(
     () => fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.success),
     [trigger],
@@ -166,7 +197,7 @@ export function useMetriviaHaptics() {
   )
 
   return useMemo(
-    () => ({ tap, select, success, error, warning, isSupported }),
-    [tap, select, success, error, warning, isSupported],
+    () => ({ tap, select, chartSelect, success, error, warning, isSupported }),
+    [tap, select, chartSelect, success, error, warning, isSupported],
   )
 }

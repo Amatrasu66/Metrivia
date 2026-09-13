@@ -3,11 +3,14 @@
  * (border-input, focus-visible ring). Native <select> keeps full keyboard
  * support with zero extra dependencies.
  *
- * Haptics: a single `select()` fires only when a value is actually
+ * Haptics: a single `chartSelect()` fires only when a value is actually
  * committed. Opening the dropdown, hovering/focusing options, keyboard
  * navigation without committing, re-renders, and state initialization never
  * fire — the native `change` event plus the value-difference guard below
- * guarantee exactly one haptic per real selection.
+ * guarantee exactly one haptic per real selection. (`chartSelect` rather
+ * than `select`: this control is used for chart configuration, whose
+ * commits coincide with a chart re-render transient — see the haptic
+ * module comment.)
  */
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 
@@ -21,14 +24,14 @@ export function FieldSelect({
   hint = null,
   placeholder = "Select…",
 }) {
-  const { select } = useMetriviaHaptics()
+  const { chartSelect } = useMetriviaHaptics()
 
   const handleChange = (event) => {
     const next = event.target.value || null
     // Existing behavior is preserved verbatim: the parent always receives
     // the committed value. Only the haptic is gated on a real change.
     if (next !== (value ?? null)) {
-      select()
+      chartSelect()
     }
     onChange(next)
   }

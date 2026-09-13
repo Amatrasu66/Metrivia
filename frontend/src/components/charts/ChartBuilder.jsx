@@ -40,7 +40,7 @@ const VIEW_BY_TYPE = {
  */
 export function ChartBuilder({ dataset, emptyAction = null }) {
   const [config, setConfig] = useState(() => defaultChartConfig(dataset))
-  const { select } = useMetriviaHaptics()
+  const { chartSelect } = useMetriviaHaptics()
 
   // A new upload replaces the file: restart from fresh defaults. Filter
   // changes only swap the dataset object, so they must not reset config.
@@ -68,7 +68,7 @@ export function ChartBuilder({ dataset, emptyAction = null }) {
   // no-op state-wise (aria-pressed is already true), so it stays silent.
   const handleChartTypeChange = (typeId) => {
     if (typeId === config.chartType) return
-    select()
+    chartSelect()
     setConfig((prev) => coerceConfigForType(dataset, prev, typeId))
   }
 
