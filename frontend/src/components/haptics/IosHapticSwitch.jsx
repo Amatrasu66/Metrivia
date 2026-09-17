@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
 import { isIosTouchDevice } from "@/lib/is-ios"
+import {
+  getHapticSettings,
+  getHapticSettingsVersion,
+  subscribeHapticSettings,
+} from "@/lib/haptic-settings"
 
 function readReducedMotion() {
   try {
@@ -57,6 +62,11 @@ function usePrefersReducedMotion() {
  * - Renders null on non-iOS devices (Android/desktop DOM is byte-identical
  *   to before), when reduced motion is preferred, when there is no action,
  *   or when the control is disabled.
+ * - The haptics master switch (Settings) also removes this layer: when the
+ *   user disables haptic feedback, no native tick is produced, but the
+ *   underlying control keeps working normally through its click path.
+ *   Intensity sliders cannot move the OS-controlled tick; only on/off
+ *   applies here (documented in Settings, not faked).
  * - Accessibility: `aria-hidden` + `tabIndex={-1}` keep it out of the
  *   screen-reader control list, focus order, and keyboard path. The visible
  *   control remains the semantic control; keyboard/AT activation runs the
@@ -67,6 +77,13 @@ function usePrefersReducedMotion() {
  */
 export function IosHapticSwitch({ onActivate, disabled = false }) {
   const reduceMotion = usePrefersReducedMotion()
+  // Master haptics toggle: disabling haptics removes the native tick layer
+  // (the control itself keeps working via its normal click path).
+  const hapticVersion = useSyncExternalStore(
+    subscribeHapticSettings,
+    getHapticSettingsVersion,
+    getHapticSettingsVersion,
+  )
 
   const applySwitchAttribute = useCallback((node) => {
     try {
@@ -78,6 +95,11 @@ export function IosHapticSwitch({ onActivate, disabled = false }) {
 
   if (disabled || typeof onActivate !== "function") return null
   if (reduceMotion) return null
+  // Subscribed above so toggling haptics in Settings adds/removes this
+  // layer immediately; `void` keeps the linter honest about the subscription
+  // being intentional even though only the snapshot below is read.
+  void hapticVersion
+  if (!getHapticSettings().enabled) return null
   if (!isIosTouchDevice()) return null
 
   const handleChange = (event) => {

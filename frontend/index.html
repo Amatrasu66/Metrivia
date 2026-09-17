@@ -11,19 +11,34 @@
     <meta name="theme-color" content="#f5f0e6" />
     <title>Metrivia — CSV Data Visualization</title>
     <script>
-      // Apply the persisted (or OS-preferred) theme before first paint to
-      // avoid a light/dark flash. Mirrors src/lib/theme.js logic.
+      // Apply the persisted theme + appearance before first paint to avoid a
+      // light/dark flash. Mirrors src/hooks/useAppSettings.jsx +
+      // src/lib/themes/theme-utils.js logic. Token values themselves are
+      // applied by React on mount; this sets the mode + theme id early.
       try {
-        var metriviaTheme = localStorage.getItem("metrivia-theme");
-        if (metriviaTheme !== "light" && metriviaTheme !== "dark") {
-          metriviaTheme = matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light";
+        var appearance = localStorage.getItem("metrivia.appearance");
+        if (
+          appearance !== "light" &&
+          appearance !== "dark" &&
+          appearance !== "system"
+        ) {
+          var legacy = localStorage.getItem("metrivia-theme");
+          appearance =
+            legacy === "light" || legacy === "dark" ? legacy : "system";
         }
-        if (metriviaTheme === "dark") {
+        var mode =
+          appearance === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : appearance;
+        var themeId =
+          localStorage.getItem("metrivia.theme-id") || "mocha-mousse";
+        document.documentElement.setAttribute("data-theme", themeId);
+        if (mode === "dark") {
           document.documentElement.classList.add("dark");
         }
-        document.documentElement.style.colorScheme = metriviaTheme;
+        document.documentElement.style.colorScheme = mode;
       } catch (e) {}
     </script>
   </head>

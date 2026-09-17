@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react"
 import { useWebHaptics } from "web-haptics/react"
 import { isIosTouchDevice } from "@/lib/is-ios"
+import { computeHapticScale } from "@/lib/haptic-settings"
 
 /**
  * Metrivia-specific haptic feedback abstraction.
@@ -99,6 +100,21 @@ import { isIosTouchDevice } from "@/lib/is-ios"
  *   so Strict Mode / re-renders cannot double-fire success/error events).
  *   One user action produces one haptic call — there is no overlay switch,
  *   so there is no second haptic source to suppress.
+ *
+ * Settings layer (Phase 1):
+ * - Every action consults the centralized haptic settings
+ *   (`@/lib/haptic-settings`) at fire time: the master toggle, the global
+ *   intensity, and the action's category level multiply into one scale that
+ *   is applied to each vibration's per-vibration intensity (the only
+ *   amplitude knob web-haptics exposes — see above). A scale of 0 (or a
+ *   disabled master switch) skips the trigger entirely.
+ * - Per-call `opts.intensityMultiplier` (default 1) lets special contexts
+ *   (Phase 2 scatter drags) scale without touching the global settings.
+ * - iOS behavior is unchanged: programmatic actions stay silent there
+ *   (native-switch path), and the master toggle additionally suppresses the
+ *   native switch via `IosHapticSwitch`. Intensity sliders cannot move the
+ *   OS-controlled iOS tick — documented in Settings, not faked here.
+ * - Call sites are unchanged: `tap()` etc. with no args keep working.
  */
 
 /**
@@ -166,6 +182,33 @@ function fireSafely(trigger, pattern) {
   }
 }
 
+/**
+ * Scale a semantic pattern by the effective settings scale. Returns null
+ * when nothing should fire (settings resolve to silence).
+ */
+function scalePatternForSettings(action, options) {
+  const scale = computeHapticScale(action, options)
+  if (scale == null) return null
+  const scaled = []
+  for (const vibration of METRIVIA_HAPTIC_PATTERNS[action] ?? []) {
+    const intensity = Math.min(
+      1,
+      Math.max(0, (vibration.intensity ?? 1) * scale),
+    )
+    // Drop vibrations scaled to silence; keep duration/delay (rhythm).
+    if (intensity <= 0.01) continue
+    scaled.push({ ...vibration, intensity })
+  }
+  return scaled.length > 0 ? scaled : null
+}
+
+function fireAction(trigger, iosDirect, action, options) {
+  if (iosDirect) return
+  const pattern = scalePatternForSettings(action, options)
+  if (!pattern) return
+  fireSafely(trigger, pattern)
+}
+
 export function useMetriviaHaptics() {
   // Defaults keep `debug`/`showSwitch` off, so no audio fallback and no
   // visible toggle is ever rendered for normal users.
@@ -178,30 +221,42 @@ export function useMetriviaHaptics() {
   // library tick for the same tap. Android/desktop behavior is unchanged.
   const iosDirect = useMemo(() => isIosTouchDevice(), [])
 
-  const tap = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.tap)
-  }, [trigger, iosDirect])
-  const select = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.select)
-  }, [trigger, iosDirect])
-  const chartSelect = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.chartSelect)
-  }, [trigger, iosDirect])
-  const success = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.success)
-  }, [trigger, iosDirect])
-  const error = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.error)
-  }, [trigger, iosDirect])
-  const warning = useCallback(() => {
-    if (iosDirect) return
-    fireSafely(trigger, METRIVIA_HAPTIC_PATTERNS.warning)
-  }, [trigger, iosDirect])
+  const tap = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "tap", options)
+    },
+    [trigger, iosDirect],
+  )
+  const select = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "select", options)
+    },
+    [trigger, iosDirect],
+  )
+  const chartSelect = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "chartSelect", options)
+    },
+    [trigger, iosDirect],
+  )
+  const success = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "success", options)
+    },
+    [trigger, iosDirect],
+  )
+  const error = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "error", options)
+    },
+    [trigger, iosDirect],
+  )
+  const warning = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "warning", options)
+    },
+    [trigger, iosDirect],
+  )
 
   return useMemo(
     () => ({ tap, select, chartSelect, success, error, warning, isSupported }),

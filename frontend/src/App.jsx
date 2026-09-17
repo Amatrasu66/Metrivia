@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
+import { SettingsPage } from "@/components/settings/SettingsPage"
+import { SettingsProvider } from "@/hooks/SettingsProvider"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
 import { defaultFilterState } from "@/lib/filter-data"
@@ -41,6 +43,16 @@ function delay(ms, signal) {
 }
 
 export default function App() {
+  return (
+    <SettingsProvider>
+      <Shell />
+    </SettingsProvider>
+  )
+}
+
+// Page-state navigation (no router): "upload" | "dashboard" | "settings".
+// Settings is reachable from everywhere and never touches dataset state.
+function Shell() {
   const [view, setView] = useState("upload")
   // idle | waking | wake-ready | uploading | analyzing | ready | error
   const [status, setStatus] = useState("idle")
@@ -271,7 +283,9 @@ export default function App() {
 
   return (
     <AppLayout activeView={view} onNavigate={handleNavigate}>
-      {view === "upload" ? (
+      {view === "settings" ? (
+        <SettingsPage />
+      ) : view === "upload" ? (
         <UploadPage
           status={status}
           wakeStartedAt={wakeStartedAt}

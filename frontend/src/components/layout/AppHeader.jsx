@@ -1,4 +1,4 @@
-import { BarChart3, Menu, X } from "lucide-react"
+import { BarChart3, Menu, Settings, X } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
@@ -69,12 +69,34 @@ export function AppHeader({ activeView, onNavigate }) {
           <Badge variant="outline" className="ml-2 hidden lg:inline-flex">
             Frontend shell
           </Badge>
-          <span className="ml-1">
+          <span className="ml-1 flex items-center gap-1">
+            <Button
+              variant={activeView === "settings" ? "secondary" : "ghost"}
+              size="icon"
+              type="button"
+              aria-label="Open settings"
+              aria-current={activeView === "settings" ? "page" : undefined}
+              title="Open settings"
+              onClick={() => handleNavigate("settings")}
+            >
+              <Settings aria-hidden="true" />
+            </Button>
             <ThemeToggle />
           </span>
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
+          <Button
+            variant={activeView === "settings" ? "secondary" : "ghost"}
+            size="icon"
+            type="button"
+            aria-label="Open settings"
+            aria-current={activeView === "settings" ? "page" : undefined}
+            title="Open settings"
+            onClick={() => handleNavigate("settings")}
+          >
+            <Settings aria-hidden="true" />
+          </Button>
           <ThemeToggle />
           <Button
             variant="outline"
@@ -108,6 +130,15 @@ export function AppHeader({ activeView, onNavigate }) {
               {item.label}
             </Button>
           ))}
+          <Button
+            variant={activeView === "settings" ? "secondary" : "ghost"}
+            className="w-full justify-start"
+            aria-current={activeView === "settings" ? "page" : undefined}
+            onClick={() => handleNavigate("settings")}
+          >
+            <Settings aria-hidden="true" />
+            Settings
+          </Button>
         </nav>
       </div>
     </header>
