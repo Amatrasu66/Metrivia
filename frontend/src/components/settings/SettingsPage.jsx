@@ -263,8 +263,11 @@ export function SettingsPage() {
                   {isIos
                     ? " This iPhone/iPad uses the fixed system tick, so sliders don’t change its strength — only on/off applies here."
                     : " On iPhone/iPad haptics are a fixed system tick, so sliders don’t change their strength there — only on/off applies."}{" "}
-                  Data-point intensity is reserved for scatter point-drag
-                  haptics arriving in Phase 2.
+                  Data-point feedback ticks as a finger drags across
+                  scatter-chart points (touch only — mouse hover stays
+                  silent).
+                  {isIos &&
+                    " Scatter drags have no haptic on this device: individual SVG points can’t host the system-tick target without breaking chart gestures."}
                 </p>
               </div>
             </div>

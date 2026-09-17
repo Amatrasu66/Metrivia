@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState } from "react";
 import { localPointFromSvg } from "./scatter-svg";
 import { useScheduledTooltip } from "./use-scheduled-tooltip";
+import { useScatterPointHaptics } from "./use-scatter-point-haptics";
 import { normalizeYAxisId } from "./y-axis-scales";
 
 export function useScatterChartInteraction(
@@ -28,6 +29,19 @@ export function useScatterChartInteraction(
 
   const isDraggingRef = useRef(false);
   const dragStartXRef = useRef(0);
+
+  // Point-drag haptics (touch only). Refs-only, stable callbacks — no
+  // renders, no timers, no extra listeners. The mouse path below never
+  // touches it, which keeps desktop hover silent by construction.
+  const { maybeFirePointHaptic, resetPointHaptic } = useScatterPointHaptics({
+    xScale,
+    yScale,
+    yScales,
+    data,
+    lines,
+    xAccessor,
+    bisectDate,
+  });
 
   const resolveTooltipFromX = useCallback(
     pixelX => {
@@ -91,7 +105,10 @@ export function useScatterChartInteraction(
     [xScale, data, xAccessor, bisectDate]
   );
 
-  const getChartX = useCallback(
+  // Chart-space position (margins removed). getChartX is the legacy
+  // X-only view kept for the drag/selection paths; touch haptics use the
+  // full point so hit-testing sees the real 2D finger position.
+  const getChartPoint = useCallback(
     (event, touchIndex = 0) => {
       const svg = event.currentTarget.ownerSVGElement;
       let clientX;
@@ -113,9 +130,17 @@ export function useScatterChartInteraction(
       if (!point) {
         return null;
       }
-      return point.x - margin.left;
+      return { x: point.x - margin.left, y: point.y - margin.top };
     },
-    [margin.left]
+    [margin.left, margin.top]
+  );
+
+  const getChartX = useCallback(
+    (event, touchIndex = 0) => {
+      const chartPoint = getChartPoint(event, touchIndex);
+      return chartPoint === null ? null : chartPoint.x;
+    },
+    [getChartPoint]
   );
 
   const handleMouseMove = useCallback(
@@ -138,6 +163,8 @@ export function useScatterChartInteraction(
         return;
       }
 
+      // NOTE: no point haptics on the mouse path — desktop hover stays
+      // silent by never calling maybeFirePointHaptic.
       const tooltip = resolveTooltipFromX(chartX);
       if (tooltip) {
         scheduleTooltip(tooltip);
@@ -148,11 +175,12 @@ export function useScatterChartInteraction(
 
   const handleMouseLeave = useCallback(() => {
     clearTooltip();
+    resetPointHaptic();
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
     }
     setSelection(null);
-  }, [clearTooltip]);
+  }, [clearTooltip, resetPointHaptic]);
 
   const handleMouseDown = useCallback(
     (event) => {
@@ -163,9 +191,10 @@ export function useScatterChartInteraction(
       isDraggingRef.current = true;
       dragStartXRef.current = chartX;
       clearTooltip();
+      resetPointHaptic();
       setSelection(null);
     },
-    [getChartX, clearTooltip]
+    [getChartX, clearTooltip, resetPointHaptic]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -187,10 +216,17 @@ export function useScatterChartInteraction(
         if (tooltip) {
           scheduleTooltip(tooltip);
         }
+        // Single-finger touch on a real point ticks (deduped + throttled
+        // inside the tracker). Touchscreen pen arrives here too.
+        const chartPoint = getChartPoint(event, 0);
+        if (chartPoint !== null) {
+          maybeFirePointHaptic(chartPoint.x, chartPoint.y);
+        }
       } else if (event.touches.length === 2) {
         event.preventDefault();
         resetTooltipDedupe();
         clearTooltip();
+        resetPointHaptic();
         const x0 = getChartX(event, 0);
         const x1 = getChartX(event, 1);
         if (x0 === null || x1 === null) {
@@ -209,11 +245,14 @@ export function useScatterChartInteraction(
     },
     [
       getChartX,
+      getChartPoint,
       resolveTooltipFromX,
       resolveIndexFromX,
       scheduleTooltip,
       resetTooltipDedupe,
       clearTooltip,
+      maybeFirePointHaptic,
+      resetPointHaptic,
     ]
   );
 
@@ -229,8 +268,15 @@ export function useScatterChartInteraction(
         if (tooltip) {
           scheduleTooltip(tooltip);
         }
+        // Finger drag across points: one tick per newly-entered point, at
+        // most one tick per throttle window. Same point = silent.
+        const chartPoint = getChartPoint(event, 0);
+        if (chartPoint !== null) {
+          maybeFirePointHaptic(chartPoint.x, chartPoint.y);
+        }
       } else if (event.touches.length === 2) {
         event.preventDefault();
+        resetPointHaptic();
         const x0 = getChartX(event, 0);
         const x1 = getChartX(event, 1);
         if (x0 === null || x1 === null) {
@@ -247,13 +293,22 @@ export function useScatterChartInteraction(
         });
       }
     },
-    [getChartX, resolveTooltipFromX, resolveIndexFromX, scheduleTooltip]
+    [
+      getChartX,
+      getChartPoint,
+      resolveTooltipFromX,
+      resolveIndexFromX,
+      scheduleTooltip,
+      maybeFirePointHaptic,
+      resetPointHaptic,
+    ]
   );
 
   const handleTouchEnd = useCallback(() => {
     clearTooltip();
+    resetPointHaptic();
     setSelection(null);
-  }, [clearTooltip]);
+  }, [clearTooltip, resetPointHaptic]);
 
   const clearSelection = useCallback(() => {
     setSelection(null);

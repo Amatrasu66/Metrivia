@@ -17,7 +17,7 @@ import { computeHapticScale } from "@/lib/haptic-settings"
  *   iOS / Android browser haptics
  *
  * Components must call the semantic actions (`tap`, `select`,
- * `chartSelect`, `success`, `error`, `warning`) and never import
+ * `chartSelect`, `dataPoint`, `success`, `error`, `warning`) and never import
  * `web-haptics` directly, so the
  * library can be replaced later without touching every component. The
  * intensity lives here, not at the call sites: `tap()` is correct,
@@ -136,6 +136,11 @@ export const METRIVIA_HAPTIC_PATTERNS = {
   // configuration and chart-mark taps survive visual-transient masking and
   // read at the same perceived strength as the select baseline.
   chartSelect: [{ duration: 20, intensity: 0.75 }],
+  // Scatter point-drag tick: same single-tick family, deliberately lighter
+  // than chartSelect. Drags can cross many points in one gesture, so each
+  // tick stays small — perceptible alone, never spammy in sequence. Fires
+  // at most once per throttle window (see use-scatter-point-haptics).
+  dataPoint: [{ duration: 15, intensity: 0.7 }],
   // Unmistakable ascending two-tap for completed operations. Stronger first
   // tap than the preset; no long buzz.
   success: [
@@ -239,6 +244,15 @@ export function useMetriviaHaptics() {
     },
     [trigger, iosDirect],
   )
+  // Scatter point-drag haptic. Consumes the `dataPoints` settings category
+  // (NOT `charts`): drag intensity is tuned independently of discrete
+  // chart taps. Same call-site contract as the other actions.
+  const dataPoint = useCallback(
+    (options) => {
+      fireAction(trigger, iosDirect, "dataPoint", options)
+    },
+    [trigger, iosDirect],
+  )
   const success = useCallback(
     (options) => {
       fireAction(trigger, iosDirect, "success", options)
@@ -259,7 +273,16 @@ export function useMetriviaHaptics() {
   )
 
   return useMemo(
-    () => ({ tap, select, chartSelect, success, error, warning, isSupported }),
-    [tap, select, chartSelect, success, error, warning, isSupported],
+    () => ({
+      tap,
+      select,
+      chartSelect,
+      dataPoint,
+      success,
+      error,
+      warning,
+      isSupported,
+    }),
+    [tap, select, chartSelect, dataPoint, success, error, warning, isSupported],
   )
 }

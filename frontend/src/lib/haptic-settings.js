@@ -29,9 +29,7 @@ export const HAPTIC_STORAGE_KEY = "metrivia.haptics"
 
 /**
  * Categories shown in Settings. `action` names the semantic
- * useMetriviaHaptics() method it scales (`null` = reserved, no live
- * consumer yet — e.g. dataPoints lights up with Phase 2 scatter drag
- * haptics). Only categories with a live consumer get a slider in the UI.
+ * useMetriviaHaptics() method it scales. Every category has a live consumer.
  */
 export const HAPTIC_CATEGORIES = [
   {
@@ -55,8 +53,8 @@ export const HAPTIC_CATEGORIES = [
   {
     id: "dataPoints",
     label: "Data points",
-    hint: "Reserved for scatter point-drag haptics (Phase 2).",
-    action: null,
+    hint: "Touches on individual scatter points while dragging across the chart.",
+    action: "dataPoint",
   },
   {
     id: "success",
@@ -77,6 +75,7 @@ export const HAPTIC_ACTION_CATEGORY = {
   tap: "buttons",
   select: "filters",
   chartSelect: "charts",
+  dataPoint: "dataPoints",
   success: "success",
   error: "errors",
   warning: "errors",
