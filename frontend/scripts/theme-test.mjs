@@ -2,7 +2,7 @@
 //
 // Covers the Phase D theme registry + catalog + helpers (no React, no DOM):
 // source completeness, unique ids/names, required tokens, chart palette,
-// Monochrome default, saved-preference migration, search, categories, and
+// Amber default, saved-preference migration, search, categories, and
 // pure token assembly. theme-utils.js has no top-level DOM access, so node
 // can import it directly (relative paths — no alias hook needed).
 //
@@ -22,6 +22,7 @@ const { BUILTIN_THEMES, DEFAULT_THEME_ID, THEMES } = registry;
 const {
   buildThemeCssVars,
   getFeaturedThemes,
+  getThemeById,
   getThemeCategory,
   getThemesByCategory,
   isValidThemeId,
@@ -148,19 +149,27 @@ const REQUIRED_TOKENS = [
 }
 
 // --- default + migration ------------------------------------------------------------
-check("T8 Graphite is the default theme", DEFAULT_THEME_ID === "graphite");
+check("T8 Amber is the default theme", DEFAULT_THEME_ID === "amber");
 check(
   "T9 saved valid theme ids survive (no forced migration to default)",
-  ["mocha-mousse", "monochrome", "lavender", "terminal", "mint"].every(
+  ["mocha-mousse", "monochrome", "lavender", "terminal", "mint", "graphite"].every(
     (id) => resolveThemeId(id) === id && isValidThemeId(id),
   ),
 );
 check(
-  "T10 unknown/blank saved ids fall back safely to Graphite",
-  resolveThemeId("nope") === "graphite" &&
-    resolveThemeId("") === "graphite" &&
-    resolveThemeId(null) === "graphite" &&
-    resolveThemeId(undefined) === "graphite",
+  "T10 unknown/blank saved ids fall back safely to Amber",
+  resolveThemeId("nope") === "amber" &&
+    resolveThemeId("") === "amber" &&
+    resolveThemeId(null) === "amber" &&
+    resolveThemeId(undefined) === "amber",
+);
+check(
+  "T10b Graphite and Mocha remain selectable (never removed)",
+  isValidThemeId("graphite") &&
+    isValidThemeId("mocha-mousse") &&
+    getThemeById("graphite")?.name === "Graphite" &&
+    getThemeById("mocha-mousse")?.name === "Mocha Mousse" &&
+    getThemeById("amber")?.name === "Amber",
 );
 
 // --- catalog --------------------------------------------------------------------------
@@ -237,10 +246,10 @@ check(
       vars["--font-sans"] != null,
   );
   const fallback = buildThemeCssVars("bogus-id", "light");
-  const graphiteLight = buildThemeCssVars("graphite", "light");
+  const amberLight = buildThemeCssVars("amber", "light");
   check(
-    "T18 unknown theme ids assemble as Graphite (safe fallback)",
-    JSON.stringify(fallback) === JSON.stringify(graphiteLight),
+    "T18 unknown theme ids assemble as Amber (safe fallback)",
+    JSON.stringify(fallback) === JSON.stringify(amberLight),
   );
   check(
     "T19 font fallback keeps bundled fonts local (no external requests)",
@@ -256,7 +265,7 @@ check(
   );
 }
 
-// --- Phase F bootstrap: Graphite first paint ---------------------------------
+// --- Phase H bootstrap: Amber first paint ---------------------------------
 {
   const { readFileSync: readSync } = await import("node:fs");
   const { fileURLToPath: toPath } = await import("node:url");
@@ -265,10 +274,12 @@ check(
   const css = readSync(`${root}src/index.css`, "utf8");
   const utilsSrc = readSync(`${root}src/lib/themes/theme-utils.js`, "utf8");
   check(
-    "T21 bootstrap defaults to Graphite (mocha stays selectable, never default)",
-    html.includes('"graphite"') &&
+    "T21 bootstrap defaults to Amber (graphite + mocha stay selectable, never default)",
+    html.includes('"amber"') &&
+      html.includes('"graphite"') &&
       html.includes('"mocha-mousse"') &&
-      !html.includes('|| "mocha-mousse"'),
+      !html.includes('|| "mocha-mousse"') &&
+      !html.includes(': "graphite"'),
   );
   check(
     "T22 bootstrap validates saved id against known themes + resolves system",
@@ -285,16 +296,19 @@ check(
       utilsSrc.includes("metrivia.theme-vars"),
   );
   check(
-    "T24 CSS :root/.dark defaults are Graphite (no Mocha first paint)",
-    css.includes("oklch(0.9551 0 0)") &&
-      css.includes("oklch(0.2178 0 0)") &&
-      !css.includes("oklch(0.9529 0.0146 102.4597)"),
+    "T24 CSS :root/.dark defaults are Amber (no Mocha/Graphite first paint)",
+    css.includes("Amber is the first-painted theme") &&
+      css.includes("oklch(0.9821 0 0)") &&
+      css.includes("oklch(0.1776 0 0)") &&
+      !css.includes("oklch(0.9529 0.0146 102.4597)") &&
+      !css.includes("oklch(0.9551 0 0)") &&
+      !css.includes("oklch(0.2178 0 0)"),
   );
   check(
-    "T25 Graphite fresh load resolves to itself in both modes",
-    JSON.stringify(buildThemeCssVars("graphite", "light")) !== "{}" &&
-      JSON.stringify(buildThemeCssVars("graphite", "dark")) !== "{}" &&
-      resolveThemeId("graphite") === "graphite",
+    "T25 Amber fresh load resolves to itself in both modes",
+    JSON.stringify(buildThemeCssVars("amber", "light")) !== "{}" &&
+      JSON.stringify(buildThemeCssVars("amber", "dark")) !== "{}" &&
+      resolveThemeId("amber") === "amber",
   );
 }
 

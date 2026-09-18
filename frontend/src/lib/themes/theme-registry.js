@@ -10,8 +10,8 @@
  * Notes:
  * - "mocha-mousse" is the original Metrivia default theme, captured exactly
  *   from src/index.css (:root + .dark). The first-run default is now
- *   "graphite" (see DEFAULT_THEME_ID); mocha-mousse and monochrome remain
- *   available and existing saved selections are preserved by id.
+ *   "amber" (see DEFAULT_THEME_ID); graphite, mocha-mousse, and monochrome
+ *   remain available and existing saved selections are preserved by id.
  * - Supplied Themes 8 and 9 were byte-identical palettes, so they share the
  *   single "twilight" entry (documented on the entry).
  * - Future custom themes belong in a separate collection (e.g. localStorage
@@ -2326,4 +2326,4 @@ export const BUILTIN_THEMES = [
 export const THEMES = BUILTIN_THEMES;
 
 /** The theme used on first run and as the fallback for bad storage. */
-export const DEFAULT_THEME_ID = "graphite";
+export const DEFAULT_THEME_ID = "amber";

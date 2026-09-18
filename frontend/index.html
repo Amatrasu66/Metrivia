@@ -8,18 +8,18 @@
       name="description"
       content="Metrivia — responsive CSV data visualization application shell."
     />
-    <meta name="theme-color" content="#f4f4f4" />
+    <meta name="theme-color" content="#fafafa" />
     <title>Metrivia — CSV Data Visualization</title>
     <script>
-      // Phase F theme bootstrap: Graphite must be the FIRST painted theme.
+      // Phase H theme bootstrap: Amber must be the FIRST painted theme.
       // Runs synchronously before first paint / before React mounts.
       // Mirrors src/lib/themes/theme-utils.js + app-settings-storage.js:
-      //   stored theme id -> validated id (Graphite fallback)
+      //   stored theme id -> validated id (Amber fallback)
       //   stored appearance -> light/dark/system (legacy key migrated)
       //   system -> matchMedia resolution
       // Then sets data-theme + .dark + colorScheme AND re-applies the last
       // persisted CSS variables (if any) so returning users with a non-
-      // Graphite theme do not flash Graphite first. React's SettingsProvider
+      // Amber theme do not flash Amber first. React's SettingsProvider
       // reads the same keys and re-applies the same values (no conflict).
       try {
         var KNOWN_THEMES = [
@@ -72,7 +72,7 @@
           storedId = localStorage.getItem("metrivia.theme-id");
         } catch (e) {}
         var themeId =
-          KNOWN_THEMES.indexOf(storedId) !== -1 ? storedId : "graphite";
+          KNOWN_THEMES.indexOf(storedId) !== -1 ? storedId : "amber";
         var el = document.documentElement;
         el.setAttribute("data-theme", themeId);
         if (mode === "dark") {
@@ -106,13 +106,13 @@
           }
         } catch (e) {}
         // Keep the theme-color meta in sync with the resolved mode so the
-        // browser chrome paints Graphite immediately (no Mocha tint).
+        // browser chrome paints Amber immediately (no gray tint).
         try {
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) {
             meta.setAttribute(
               "content",
-              mode === "dark" ? "#383838" : "#f4f4f4",
+              mode === "dark" ? "#2b2b2b" : "#fafafa",
             );
           }
         } catch (e) {}

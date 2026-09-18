@@ -103,5 +103,55 @@ class UploadLimitTest(unittest.TestCase):
             importlib.reload(app_module)
 
 
+    def test_near_limit_accepted_and_over_limit_rejected(self):
+        """Phase H boundary: just under MAX bytes -> 200, MAX+1 -> JSON 413.
+
+        Uses a 1 MiB override so the boundary is exercised quickly (a real
+        20 MiB valid CSV would run the full analysis in the test). Note the
+        limit is enforced at two layers: Flask's MAX_CONTENT_LENGTH counts
+        the whole multipart body (file + ~200 B of framing), so the
+        effective file ceiling is MAX minus framing overhead; the route's
+        own raw-length check then returns a JSON 413 past MAX.
+        """
+        import os
+
+        previous = os.environ.get("MAX_UPLOAD_MB")
+        os.environ["MAX_UPLOAD_MB"] = "1"
+        try:
+            import importlib
+
+            import app as app_module
+
+            importlib.reload(app_module)
+            limit = app_module.MAX_UPLOAD_BYTES
+            client = app_module.create_app().test_client()
+            header = b"id,value\n"
+            # A body comfortably under the limit (multipart framing is only
+            # ~200 B) but close enough to prove the boundary region works.
+            k = limit - len(header) - len(b"1,") - len(b"\n") - 4096
+            near = header + b"1," + b"x" * k + b"\n"
+            resp = post_csv(client, near, "near.csv")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+            self.assertEqual(body["row_count"], 1)
+            self.assertEqual(len(body["preview"]), 1)
+            over = header + b"1," + b"x" * (k + 4097) + b"\n"
+            self.assertGreater(len(over), limit)
+            resp = post_csv(client, over, "over.csv")
+            self.assertEqual(resp.status_code, 413)
+            self.assertIn("error", resp.get_json())
+            del near, over
+        finally:
+            if previous is None:
+                del os.environ["MAX_UPLOAD_MB"]
+            else:
+                os.environ["MAX_UPLOAD_MB"] = previous
+            import importlib
+
+            import app as app_module
+
+            importlib.reload(app_module)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

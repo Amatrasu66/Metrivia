@@ -7,7 +7,7 @@
 //   animation safeguards (no transition-all, no `transition: all`, memoized
 //     dashboard subtree, single animation library, reduced-motion wiring)
 //   header contract (desktop spacer layout, mobile menu with appearance)
-//   theme bootstrap (Graphite first paint, no Mocha default)
+//   theme bootstrap (Amber first paint, no Mocha/Graphite default)
 //   upload contract (frontend 20 MiB constant + validation helper, backend
 //     20 MiB default + JSON 413 path, table windowing present)
 //
@@ -227,20 +227,22 @@ check(
 {
   const html = readFileSync(join(rootDir, "index.html"), "utf8");
   check(
-    "U21 theme bootstrap defaults to Graphite with known-id validation",
-    html.includes('"graphite"') &&
+    "U21 theme bootstrap defaults to Amber with known-id validation",
+    html.includes('"amber"') &&
       html.includes("KNOWN_THEMES") &&
       html.includes("metrivia.theme-vars") &&
       !html.includes('|| "mocha-mousse"') &&
-      html.includes("mocha-mousse"),
+      html.includes("mocha-mousse") &&
+      html.includes('"graphite"'),
   );
   const css = readSrc("index.css");
   check(
-    "U22 CSS first-paint defaults are Graphite (no Mocha tokens)",
-    css.includes("Graphite is the first-painted theme") &&
-      css.includes("oklch(0.9551 0 0)") &&
-      css.includes("oklch(0.2178 0 0)") &&
-      !css.includes("oklch(0.9529 0.0146 102.4597)"),
+    "U22 CSS first-paint defaults are Amber (no Mocha/Graphite tokens)",
+    css.includes("Amber is the first-painted theme") &&
+      css.includes("oklch(0.9821 0 0)") &&
+      css.includes("oklch(0.1776 0 0)") &&
+      !css.includes("oklch(0.9529 0.0146 102.4597)") &&
+      !css.includes("oklch(0.9551 0 0)"),
   );
 }
 {
@@ -264,6 +266,62 @@ check(
   check(
     "U16 uploads still go directly to the backend (no Vercel proxy route)",
     api.includes("/api/upload") && !api.includes("/api/csv-proxy"),
+  );
+}
+{
+  // Phase H pie chart: interactive slice/legend linking with stable label
+  // identity, local hover state, accessible legend buttons, and a
+  // cursor-independent tooltip (structural tripwires — interaction itself
+  // needs the manual browser pass).
+  const pie = stripComments(readSrc("components/charts/views/PieChartView.jsx"));
+  check(
+    "P1 pie slices use stable label identity (no index-only state)",
+    pie.includes("activeLabel") &&
+      pie.includes("findIndex") &&
+      pie.includes("d.label === activeLabel") &&
+      pie.includes("key={d.label}"),
+  );
+  check(
+    "P2 slice hover drives the legend via controlled PieChart hover",
+    pie.includes("hoveredIndex") &&
+      pie.includes("onHoverChange") &&
+      pie.includes("handleHoverChange") &&
+      pie.includes("onMouseEnter"),
+  );
+  check(
+    "P3 legend hover/focus highlights the slice and clearing works",
+    pie.includes("onFocus") &&
+      pie.includes("onBlur") &&
+      pie.includes("onMouseLeave") &&
+      pie.includes("activeIndex >= 0 ? activeIndex : null"),
+  );
+  check(
+    "P4 tooltip shows category, value, and share without intercepting hover",
+    pie.includes('role="status"') &&
+      pie.includes('aria-live="polite"') &&
+      pie.includes("pointer-events-none") &&
+      pie.includes("formatShare") &&
+      pie.includes("formatCount(activeDatum.value)"),
+  );
+  check(
+    "P5 legend entries are keyboard-focusable buttons with color-independent active state",
+    pie.includes("<button") &&
+      pie.includes("aria-label") &&
+      pie.includes("aria-current") &&
+      pie.includes("ring-1") &&
+      pie.includes("opacity-50") &&
+      pie.includes("overflow-y-auto"),
+  );
+  check(
+    "P6 pie hover state stays local (no workspace/global slice state)",
+    pie.includes("useState") &&
+      !pie.includes("useWorkspaces") &&
+      !pie.includes("useAppSettings") &&
+      !pie.includes("activeSlice"),
+  );
+  check(
+    "P7 legend colors reuse theme chart tokens (no hard-coded palette)",
+    pie.includes("var(--chart-") && !pie.includes("#"),
   );
 }
 

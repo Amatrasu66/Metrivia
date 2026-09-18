@@ -12,7 +12,9 @@ background workers — intentionally minimal for Render's free tier.
 
 import io
 import json
+import logging
 import os
+import time
 
 import pandas as pd
 from flask import Flask, Response, jsonify, request
@@ -20,6 +22,8 @@ from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from analysis import analyze_dataframe
+
+logger = logging.getLogger("metrivia.app")
 
 # Application CSV ceiling: 20 MiB. ONE explicit constant — the route, the
 # manual read cap, and the Flask backstop below all derive from it.
@@ -105,6 +109,11 @@ def create_app(cors_origins=None):
 
     @app.post("/api/upload")
     def upload():
+        # Phase H stage timing: request receipt → parse → analysis →
+        # (serialization streams during transfer). Safe metadata only —
+        # never file contents. Logged as one line per upload so slow
+        # production uploads can be attributed to a stage.
+        request_started = time.perf_counter()
         if "file" not in request.files:
             return _error(
                 "No file provided. Send a CSV file as multipart form field 'file'.",
@@ -141,7 +150,9 @@ def create_app(cors_origins=None):
             )
 
         try:
+            read_started = time.perf_counter()
             df = _read_csv_bytes(raw)
+            read_ms = (time.perf_counter() - read_started) * 1000
         except UploadError as exc:
             return _error(exc.message, exc.status)
         except Exception:
@@ -155,13 +166,27 @@ def create_app(cors_origins=None):
             del raw
 
         try:
+            analysis_started = time.perf_counter()
             result = analyze_dataframe(df, safe_name)
+            analysis_ms = (time.perf_counter() - analysis_started) * 1000
         except Exception:
             return _error("Failed to analyze the CSV file.", 500)
         finally:
             # The records list inside `result` is all the serializer needs;
             # drop the DataFrame (and its object-dtype columns) first.
             del df
+        row_count = result.get("row_count")
+        column_count = result.get("column_count")
+        logger.info(
+            "upload filename=%s size_bytes=%d rows=%s cols=%s read_ms=%.1f analysis_ms=%.1f total_ms=%.1f",
+            safe_name,
+            request.content_length or 0,
+            row_count,
+            column_count,
+            read_ms,
+            analysis_ms,
+            (time.perf_counter() - request_started) * 1000,
+        )
         return _stream_json(result), 200
 
     @app.errorhandler(RequestEntityTooLarge)
