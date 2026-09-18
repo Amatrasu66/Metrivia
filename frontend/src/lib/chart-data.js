@@ -332,9 +332,14 @@ export function transformChartData(dataset, config) {
       const time = new Date(rawX).getTime()
       const y = toFiniteNumber(row[measure])
       if (!Number.isFinite(time) || y === null) continue
-      points.push({ x: String(rawX), y })
+      // Parse each timestamp once here (Phase G): the previous
+      // `new Date(...)` calls inside the sort comparator re-parsed every
+      // label O(n log n) times, which dominated filter-change latency on
+      // large scatter views. The scratch `t` field is stripped below so
+      // the returned data shape is unchanged ({ x, y } only).
+      points.push({ x: String(rawX), y, t: time })
     }
-    points.sort((a, b) => new Date(a.x).getTime() - new Date(b.x).getTime())
+    points.sort((a, b) => a.t - b.t)
     if (points.length === 0) {
       return {
         status: "empty",
@@ -343,15 +348,16 @@ export function transformChartData(dataset, config) {
           "None of the preview rows have both a valid datetime and a numeric value for the selected fields.",
       }
     }
+    const data = points.map((p) => ({ x: p.x, y: p.y }))
     return {
       status: "ok",
       kind: "scatter",
-      data: points,
+      data,
       dimension,
       measure,
       aggregation: null,
-      totalGroups: points.length,
-      shownGroups: points.length,
+      totalGroups: data.length,
+      shownGroups: data.length,
     }
   }
 

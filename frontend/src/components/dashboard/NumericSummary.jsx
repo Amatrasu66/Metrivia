@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { memo, useMemo } from "react"
 import {
   Card,
   CardContent,
@@ -23,8 +23,15 @@ function formatStat(value, digits = 2) {
 /**
  * Secondary analytics: min / mean / max per numeric column, computed from
  * the current (filtered) rows. Purely real data — no backend call.
+ *
+ * Memoized (Phase G): the parent re-renders on chart-config edits while
+ * `rows` / `numericColumns` keep stable references, so the per-column list
+ * diff below is skipped unless the filtered view actually changed.
  */
-export function NumericSummary({ rows, numericColumns }) {
+export const NumericSummary = memo(function NumericSummary({
+  rows,
+  numericColumns,
+}) {
   const summaries = useMemo(() => {
     const list = Array.isArray(numericColumns) ? numericColumns : []
     const data = Array.isArray(rows) ? rows : []
@@ -105,4 +112,4 @@ export function NumericSummary({ rows, numericColumns }) {
       </CardContent>
     </Card>
   )
-}
+})

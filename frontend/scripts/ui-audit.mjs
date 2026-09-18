@@ -146,11 +146,15 @@ check(
 );
 {
   // The virtualized table must not be wrapped in layout/per-row animation:
-  // DashboardPlaceholder must contain no motion/layout animation imports.
+  // DashboardPlaceholder and DataTable must contain no motion/layout
+  // animation imports. (Phase G: windowing lives in DataTable so table
+  // scroll never re-renders the dashboard.)
   const code = stripComments(readSrc("components/dashboard/DashboardPlaceholder.jsx"));
+  const table = stripComments(readSrc("components/dashboard/DataTable.jsx"));
   check(
     "U12 data table has no animation wrappers (no motion imports)",
-    !code.includes("motion/react") && !code.includes("AnimatePresence"),
+    !code.includes("motion/react") && !code.includes("AnimatePresence") &&
+      !table.includes("motion/react") && !table.includes("AnimatePresence"),
   );
 }
 
@@ -240,11 +244,18 @@ check(
   );
 }
 {
+  // Phase G: row windowing lives in DataTable (it owns the virtualizer so
+  // table scroll never re-renders the KPIs/chart/summary); the placeholder
+  // must render DataTable instead of mapping every row itself.
+  const table = stripComments(readSrc("components/dashboard/DataTable.jsx"));
   const code = stripComments(readSrc("components/dashboard/DashboardPlaceholder.jsx"));
   check(
     "U15 preview table is windowed (virtualizer, spacers, no full map)",
-    code.includes("useVirtualizer") &&
-      code.includes("getVirtualItems") &&
+    table.includes("useVirtualizer") &&
+      table.includes("getVirtualItems") &&
+      table.includes("topSpacer") &&
+      table.includes("bottomSpacer") &&
+      code.includes("<DataTable") &&
       !code.includes("visibleRows.map("),
   );
 }

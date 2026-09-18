@@ -4,10 +4,8 @@ import {
   Gauge,
   Hash,
   Rows3,
-  Table,
 } from "lucide-react"
-import { memo, useCallback, useMemo, useRef } from "react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { memo, useCallback, useMemo } from "react"
 import { formatCount, formatPercent } from "@/lib/format"
 import {
   applyFilters,
@@ -27,23 +25,16 @@ import { EmptyState } from "@/components/states/EmptyState"
 import { Button } from "@/components/ui/button"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ChartBuilder } from "@/components/charts/ChartBuilder"
+import { DataTable } from "@/components/dashboard/DataTable"
 import { KpiCard } from "@/components/dashboard/KpiCard"
 import { NumericSummary } from "@/components/dashboard/NumericSummary"
 
 // The data viewer below renders every row and column inside a bounded
 // scroll container (vertical + horizontal), so wide datasets stay usable on
 // small screens and the page itself never overflows horizontally.
-
-function formatCell(value) {
-  if (value === null || value === undefined || value === "") return "—"
-  return String(value)
-}
-
-// Fixed row height for the virtualized data viewer. Cells are single-line
-// (whitespace-nowrap, text-sm, py-2) so every row measures the same — the
-// virtualizer needs no per-row measurement pass over potentially hundreds
-// of thousands of rows.
-const PREVIEW_ROW_HEIGHT = 33
+// Virtualization itself lives in DataTable (Phase G), which also owns the
+// scroll state so scrolling the table never re-renders the KPIs, chart, or
+// summary above it.
 
 /**
  * Dataset dashboard (KPIs, chart, columns, full data viewer). Memoized so
@@ -104,30 +95,39 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
       ) : null,
     [filtersActive, resetFilters],
   )
-  // Row windowing lives above the early return too (the virtualizer owns
-  // hooks): with no dataset the count is simply zero. Only rows near the
-  // viewport become DOM nodes (~50 at a time regardless of dataset size),
-  // so a 20 MiB upload cannot create hundreds of thousands of cells.
+  // Row windowing lives in DataTable (which owns the virtualizer hooks):
+  // with no dataset the count is simply zero. Only rows near the viewport
+  // become DOM nodes (~50 at a time regardless of dataset size), so a
+  // 20 MiB upload cannot create hundreds of thousands of cells.
   // Top/bottom spacer rows preserve the full scroll height and keep every
   // column aligned with the sticky header — no absolute positioning, no
-  // per-row measurement, no animation of the table itself.
+  // per-row measurement, no animation of the table itself. DataTable is
+  // memoized on stable row/column references, so scrolling it never
+  // re-renders this placeholder and chart-config-only changes skip it.
   const visibleRows = filteredRows
   const visibleColumns = columns
-  const scrollRef = useRef(null)
-  const getScrollElement = useCallback(() => scrollRef.current, [])
-  const rowVirtualizer = useVirtualizer({
-    count: visibleRows.length,
-    getScrollElement,
-    estimateSize: () => PREVIEW_ROW_HEIGHT,
-    overscan: 12,
-  })
-  const virtualRows = rowVirtualizer.getVirtualItems()
-  const topSpacer = virtualRows.length > 0 ? virtualRows[0].start : 0
-  const bottomSpacer =
-    visibleRows.length * PREVIEW_ROW_HEIGHT -
-    (virtualRows.length > 0
-      ? virtualRows[virtualRows.length - 1].end
-      : 0)
+  // Completeness reflects the current (filtered) view; column metadata
+  // below still describes the full uploaded dataset. Memoized (Phase G):
+  // it is O(rows × columns) and must run only when the filtered rows or
+  // the column list actually change — never on chart-config edits, table
+  // scrolls, or other unrelated renders of this placeholder. Lives above
+  // the early return (hooks discipline); without a dataset it is simply
+  // null and unused.
+  const completeness = useMemo(() => {
+    const filteredCells = filteredRows.length * columns.length
+    if (filteredCells === 0) return null
+    let filteredMissing = 0
+    for (const row of filteredRows) {
+      if (row === null || typeof row !== "object") continue
+      for (const col of columns) {
+        const value = row[col]
+        if (value === null || value === undefined || value === "") {
+          filteredMissing += 1
+        }
+      }
+    }
+    return ((filteredCells - filteredMissing) / filteredCells) * 100
+  }, [filteredRows, columns])
 
   if (!dataset) {
     const handleUpload = () => {
@@ -171,24 +171,6 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   const rowCount = Number(dataset.row_count) || 0
   const columnCount = Number(dataset.column_count) || columns.length
   const numericCount = columns.filter((col) => dtypes[col] === "numeric").length
-
-  // Completeness reflects the current (filtered) view; column metadata
-  // below still describes the full uploaded dataset.
-  const filteredCells = filteredRows.length * columns.length
-  const filteredMissing = filteredRows.reduce((sum, row) => {
-    if (row === null || typeof row !== "object") return sum
-    return (
-      sum +
-      columns.filter((col) => {
-        const value = row[col]
-        return value === null || value === undefined || value === ""
-      }).length
-    )
-  }, 0)
-  const completeness =
-    filteredCells > 0
-      ? ((filteredCells - filteredMissing) / filteredCells) * 100
-      : null
 
   const kpis = [
     {
@@ -327,81 +309,12 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div
-            ref={scrollRef}
-            role="region"
-            aria-label={`Scrollable data table for ${dataset.filename}`}
-            tabIndex={0}
-            className="max-h-[32rem] min-w-0 overflow-auto rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <table className="w-full min-w-max border-collapse text-left text-sm">
-              <caption className="sr-only">
-                All rows and columns of {dataset.filename}
-                {filtersActive ? " matching the active filters" : ""}
-              </caption>
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-border bg-muted">
-                  {visibleColumns.map((col) => (
-                    <th
-                      key={col}
-                      scope="col"
-                      className="bg-muted px-3 py-2 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Table
-                          aria-hidden="true"
-                          className="size-3.5 shrink-0"
-                        />
-                        {col}
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {topSpacer > 0 && (
-                  <tr aria-hidden="true">
-                    <td
-                      colSpan={visibleColumns.length}
-                      style={{ height: topSpacer, padding: 0, border: 0 }}
-                    />
-                  </tr>
-                )}
-                {virtualRows.map((virtualRow) => {
-                  const row = visibleRows[virtualRow.index]
-                  return (
-                    <tr
-                      key={virtualRow.key}
-                      className="border-b border-border bg-card"
-                    >
-                      {visibleColumns.map((col) => (
-                        <td
-                          key={col}
-                          className="px-3 py-2 whitespace-nowrap tabular-nums"
-                        >
-                          {formatCell(row[col])}
-                        </td>
-                      ))}
-                    </tr>
-                  )
-                })}
-                {bottomSpacer > 0 && (
-                  <tr aria-hidden="true">
-                    <td
-                      colSpan={visibleColumns.length}
-                      style={{ height: bottomSpacer, padding: 0, border: 0 }}
-                    />
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Showing all {formatCount(visibleRows.length)}
-            {filtersActive ? " filtered" : ""} rows and all{" "}
-            {formatCount(visibleColumns.length)} columns. Scroll vertically for
-            more rows, horizontally for more columns.
-          </p>
+          <DataTable
+            rows={visibleRows}
+            columns={visibleColumns}
+            filename={dataset.filename}
+            filtersActive={filtersActive}
+          />
         </CardContent>
       </Card>
     </div>

@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  Component,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
-import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
-import { SettingsPage } from "@/components/settings/SettingsPage"
+import { ErrorState } from "@/components/states/ErrorState"
 import { SettingsProvider } from "@/hooks/SettingsProvider"
 import { WorkspaceProvider } from "@/hooks/WorkspaceProvider"
 import { useWorkspaces } from "@/hooks/useWorkspaces"
@@ -11,6 +18,23 @@ import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
 import { defaultChartConfig } from "@/lib/chart-data"
 import { defaultFilterState } from "@/lib/filter-data"
 import { validateCsvFile } from "@/lib/format"
+
+// Phase G code splitting: the dashboard/chart area (Bklit/visx charts,
+// TanStack virtualized table, filter drawer) and Settings (theme gallery,
+// haptic controls) are heavy and never needed for the initial landing /
+// upload page, the basic shell, or header. They load on demand when the
+// user actually navigates there — no routing library, just React.lazy,
+// which Vite splits into separate chunks automatically.
+const DashboardLayout = lazy(() =>
+  import("@/components/dashboard/DashboardLayout").then((module) => ({
+    default: module.DashboardLayout,
+  })),
+)
+const SettingsPage = lazy(() =>
+  import("@/components/settings/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+)
 
 // Upload lifecycle. "uploading" covers the fetch to POST /api/upload;
 // "analyzing" is shown only once the request has reached the backend
@@ -25,6 +49,111 @@ const UPLOAD_FAILED_TITLE = "Could not process this file"
 const BACKEND_UNAVAILABLE_TITLE = "Backend unavailable"
 const BACKEND_UNAVAILABLE_MESSAGE =
   "We couldn't reach the analysis server. Please try again."
+
+/**
+ * Static loading placeholders for the lazily loaded sections (Phase G).
+ * They mirror the real section containers (same max-width / padding) so
+ * there is no layout shift when the chunk arrives, and they are
+ * deliberately static: no animation, no Motion, no shimmer — plain blocks
+ * that respect reduced motion and never make loading feel slower. Theme
+ * tokens come from the document-level CSS variables set by the synchronous
+ * bootstrap, so the real section paints correctly themed on arrival.
+ */
+function DashboardFallback() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading dashboard"
+      className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10"
+    >
+      <span className="sr-only">Loading dashboard…</span>
+      <div aria-hidden="true" className="flex min-w-0 flex-col gap-2">
+        <div className="h-3 w-20 rounded bg-muted" />
+        <div className="h-8 w-64 max-w-full rounded-lg bg-muted" />
+        <div className="h-4 w-80 max-w-full rounded bg-muted" />
+      </div>
+      <div
+        aria-hidden="true"
+        className="min-w-0 rounded-xl border border-border bg-card px-4 py-5"
+      >
+        <div className="h-5 w-24 rounded bg-muted" />
+        <div className="mt-4 h-64 w-full rounded-lg bg-muted/60" />
+      </div>
+      <div aria-hidden="true" className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="min-w-0 rounded-xl border border-border bg-card px-4 py-5">
+          <div className="h-5 w-28 rounded bg-muted" />
+          <div className="mt-4 h-32 w-full rounded-lg bg-muted/60" />
+        </div>
+        <div className="min-w-0 rounded-xl border border-border bg-card px-4 py-5">
+          <div className="h-5 w-28 rounded bg-muted" />
+          <div className="mt-4 h-32 w-full rounded-lg bg-muted/60" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsFallback() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading settings"
+      className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6"
+    >
+      <span className="sr-only">Loading settings…</span>
+      <div aria-hidden="true" className="flex min-w-0 flex-col gap-2">
+        <div className="h-8 w-40 rounded-lg bg-muted" />
+        <div className="h-4 w-72 max-w-full rounded bg-muted" />
+      </div>
+      <div
+        aria-hidden="true"
+        className="mt-6 min-w-0 rounded-xl border border-border bg-card px-4 py-5"
+      >
+        <div className="h-5 w-32 rounded bg-muted" />
+        <div className="mt-4 h-24 w-full rounded-lg bg-muted/60" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Preserves error handling across the lazy boundary: if a section chunk
+ * fails to load (e.g. offline on first navigation), the user gets the
+ * standard error presentation with a retry instead of a blank section.
+ * Retrying re-issues the dynamic import; workspace state is untouched
+ * (this boundary owns no data — it only resets its own failed flag).
+ * Keyed by view at the usage site so navigating away and back resets it.
+ */
+class SectionErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { failed: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  handleRetry = () => {
+    this.setState({ failed: false })
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6">
+          <ErrorState
+            title="This section didn't load"
+            message="Check your connection and try again — your workspaces and uploaded data are kept."
+            onRetry={this.handleRetry}
+            retryLabel="Try again"
+          />
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -404,7 +533,11 @@ function Shell() {
       onCloseWorkspace={handleCloseWorkspace}
     >
       {view === "settings" ? (
-        <SettingsPage />
+        <SectionErrorBoundary key="settings">
+          <Suspense fallback={<SettingsFallback />}>
+            <SettingsPage />
+          </Suspense>
+        </SectionErrorBoundary>
       ) : view === "upload" ? (
         <UploadPage
           status={status}
@@ -421,15 +554,19 @@ function Shell() {
           onViewDashboard={() => handleNavigate("dashboard")}
         />
       ) : (
-        <DashboardLayout
-          dataset={dataset}
-          filters={filters}
-          onFiltersChange={handleFiltersChange}
-          chartConfig={chartConfig}
-          onChartConfigChange={handleChartConfigChange}
-          onBackToUpload={handleBackToUpload}
-          onRemoveFile={resetUpload}
-        />
+        <SectionErrorBoundary key="dashboard">
+          <Suspense fallback={<DashboardFallback />}>
+            <DashboardLayout
+              dataset={dataset}
+              filters={filters}
+              onFiltersChange={handleFiltersChange}
+              chartConfig={chartConfig}
+              onChartConfigChange={handleChartConfigChange}
+              onBackToUpload={handleBackToUpload}
+              onRemoveFile={resetUpload}
+            />
+          </Suspense>
+        </SectionErrorBoundary>
       )}
     </AppLayout>
   )

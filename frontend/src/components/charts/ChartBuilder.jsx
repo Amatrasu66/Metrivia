@@ -84,11 +84,25 @@ export const ChartBuilder = memo(function ChartBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetKey])
 
+  // Option lists depend only on the dataset *schema* (columns, inferred
+  // types, unique counts) — never on the row values. They are keyed on
+  // those stable references (Phase G) so filtering rows (which replaces
+  // the dataset object via buildFilteredDataset while keeping the same
+  // column/type metadata) does not recompute them or hand new arrays to
+  // the selects. Only an actual schema change (new upload) recalculates.
+  const schemaColumns = dataset?.columns
+  const schemaDtypes = dataset?.dtypes
+  const schemaUnique = dataset?.unique
   const dimensionOptions = useMemo(
     () => getDimensionOptions(dataset, config.chartType),
-    [dataset, config.chartType],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schemaColumns, schemaDtypes, schemaUnique, config.chartType],
   )
-  const measureOptions = useMemo(() => getMeasureOptions(dataset), [dataset])
+  const measureOptions = useMemo(
+    () => getMeasureOptions(dataset),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schemaColumns, schemaDtypes],
+  )
   const prepared = useMemo(
     () => transformChartData(dataset, config),
     [dataset, config],
