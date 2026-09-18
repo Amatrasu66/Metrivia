@@ -9,7 +9,6 @@ import {
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { isIosTouchDevice } from "@/lib/is-ios"
-import { THEMES } from "@/lib/themes"
 import { APPEARANCES } from "@/lib/themes/theme-utils"
 import { HAPTIC_CATEGORIES } from "@/lib/haptic-settings"
 import {
@@ -31,7 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { ThemeCard } from "@/components/settings/ThemeCard"
+import { ThemeGallery } from "@/components/settings/ThemeGallery"
 import { HapticSlider } from "@/components/settings/HapticSlider"
 import { version as appVersion } from "../../../package.json"
 
@@ -281,32 +280,14 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle id="settings-appearance">Appearance</CardTitle>
             <CardDescription>
-              Pick a theme palette, then choose light, dark, or follow your
-              system.
+              Choose a color mode, then pick a visual theme below. Theme
+              changes apply across the whole app and every workspace.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-6">
             <div className="flex min-w-0 flex-col gap-3">
-              <h3 className="text-sm font-semibold text-foreground">Theme</h3>
-              <div
-                role="group"
-                aria-label="Theme palette"
-                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-              >
-                {THEMES.map((theme) => (
-                  <ThemeCard
-                    key={theme.id}
-                    theme={theme}
-                    selected={theme.id === themeId}
-                    onSelect={() => handleSelectTheme(theme.id)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-3">
               <h3 className="text-sm font-semibold text-foreground">
-                Appearance
+                Color mode
               </h3>
               <div
                 role="group"
@@ -350,6 +331,25 @@ export function SettingsPage() {
                 when it changes.
               </p>
             </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ---------------------------------------------------- Themes */}
+      <section aria-labelledby="settings-themes" className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle id="settings-themes">Themes</CardTitle>
+            <CardDescription>
+              Choose a visual theme for Metrivia. Previews show the real
+              light and dark palettes with their chart colors.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-w-0">
+            <ThemeGallery
+              activeThemeId={themeId}
+              onSelectTheme={handleSelectTheme}
+            />
           </CardContent>
         </Card>
       </section>

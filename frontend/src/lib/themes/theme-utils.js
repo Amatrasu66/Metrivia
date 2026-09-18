@@ -1,4 +1,9 @@
 import { DEFAULT_THEME_ID, THEMES } from "./theme-registry.js"
+import {
+  THEME_CATALOG,
+  THEME_CATEGORY_META,
+  THEME_CATEGORY_ORDER,
+} from "./theme-catalog.js"
 
 /**
  * Pure theme helpers + global theme application.
@@ -44,6 +49,77 @@ export function resolveThemeId(raw) {
 
 export function resolveTheme(raw) {
   return getThemeById(resolveThemeId(raw))
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: categories, featured rail, search (presentation metadata only —
+// tokens always come from the registry).
+// ---------------------------------------------------------------------------
+
+/** Primary gallery category id for a theme ("neutral" fallback, never null). */
+export function getThemeCategory(id) {
+  const entry = THEME_CATALOG[id]
+  const category = entry?.category
+  return category != null && THEME_CATEGORY_META[category] != null
+    ? category
+    : "neutral"
+}
+
+/** Human-readable category label for a theme. */
+export function getThemeCategoryLabel(id) {
+  return THEME_CATEGORY_META[getThemeCategory(id)].label
+}
+
+export function isThemeFeatured(id) {
+  return THEME_CATALOG[id]?.featured === true
+}
+
+/** Featured themes first in registry order (small, curated rail). */
+export function getFeaturedThemes() {
+  return THEMES.filter((theme) => isThemeFeatured(theme.id))
+}
+
+/**
+ * Non-featured themes grouped by primary category, in
+ * THEME_CATEGORY_ORDER (featured excluded — it is a highlight rail, not a
+ * second home). Returns [{ id, label, blurb, themes }], skipping empties.
+ */
+export function getThemesByCategory() {
+  const groups = []
+  for (const id of THEME_CATEGORY_ORDER) {
+    if (id === "featured") continue
+    const themes = THEMES.filter(
+      (theme) => getThemeCategory(theme.id) === id,
+    )
+    if (themes.length === 0) continue
+    groups.push({ id, ...THEME_CATEGORY_META[id], themes })
+  }
+  return groups
+}
+
+/**
+ * Case-insensitive search across name, description, category label, and
+ * catalog keywords. Blank queries return every theme in registry order.
+ * Pure — safe to unit-test in node.
+ */
+export function searchThemes(query) {
+  const needle = String(query ?? "").trim().toLowerCase()
+  if (needle === "") return [...THEMES]
+  return THEMES.filter((theme) => {
+    const haystack = [
+      theme.name,
+      theme.description,
+      getThemeCategoryLabel(theme.id),
+      ...(THEME_CATALOG[theme.id]?.keywords ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+    return needle
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((word) => haystack.includes(word))
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +224,7 @@ export function withFontFallback(stack, kind = "sans") {
 // ---------------------------------------------------------------------------
 
 /**
- * Metrivia-specific tokens the supplied Tweaks-style themes do not define
+ * Metrivia-specific tokens the supplied themes do not define
  * (chart chrome, marker/tooltip surfaces), derived from the active core
  * palette. Keys the theme DOES define always win — the default
  * (mocha-mousse) theme defines all of these itself, so it is applied

@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "haptics:audit": "node ./scripts/haptics-audit.mjs",
+    "themes:test": "node ./scripts/theme-test.mjs",
     "workspaces:test": "node ./scripts/workspaces-test.mjs",
     "preview": "vite preview"
   },

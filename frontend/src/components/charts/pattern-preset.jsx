@@ -142,15 +142,17 @@ export function renderPatternPreset(preset, id, options = {}) {
           strokeWidth={strokeWidth}
         />
       );
-    case "accent":
-      return (
-        <PatternLines
-          {...common}
-          orientation={["diagonal"]}
-          stroke="#e879f9"
-          strokeWidth={strokeWidth}
-        />
-      );
+      case "accent":
+        return (
+          <PatternLines
+            {...common}
+            orientation={["diagonal"]}
+            // Theme-following accent (was a fixed fuchsia): the pattern now
+            // responds to the active palette like every other chart color.
+            stroke="var(--chart-2)"
+            strokeWidth={strokeWidth}
+          />
+        );
     default:
       return null;
   }

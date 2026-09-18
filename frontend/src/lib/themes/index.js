@@ -9,18 +9,29 @@ export {
   THEMES,
 } from "./theme-registry.js"
 export {
+  THEME_CATALOG,
+  THEME_CATEGORY_META,
+  THEME_CATEGORY_ORDER,
+} from "./theme-catalog.js"
+export {
   APPEARANCES,
   THEME_DATA_ATTR,
   applyThemeTokens,
   buildThemeCssVars,
+  getFeaturedThemes,
   getSystemMode,
   getThemeById,
+  getThemeCategory,
+  getThemeCategoryLabel,
+  getThemesByCategory,
+  isThemeFeatured,
   isValidAppearance,
   isValidThemeId,
   resolveAppearance,
   resolveEffectiveMode,
   resolveTheme,
   resolveThemeId,
+  searchThemes,
   subscribeToSystemMode,
   withFontFallback,
 } from "./theme-utils.js"

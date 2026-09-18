@@ -247,6 +247,22 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Subtle theme-switch polish: color-only transitions so switching palettes
+     feels instant yet smooth. Guarded by prefers-reduced-motion (immediate
+     changes there) and limited to paint-only properties — never layout,
+     never chart geometry. */
+  @media (prefers-reduced-motion: no-preference) {
+    *,
+    *::before,
+    *::after {
+      transition:
+        background-color 180ms ease,
+        border-color 180ms ease,
+        color 180ms ease,
+        fill 180ms ease,
+        stroke 180ms ease;
+    }
+  }
   html {
     @apply font-sans;
   }
