@@ -298,6 +298,9 @@ export function buildThemeCssVars(themeId, mode) {
 // Global application
 // ---------------------------------------------------------------------------
 
+/** Storage key for the last applied CSS variables (first-paint cache). */
+export const THEME_VARS_STORAGE_KEY = "metrivia.theme-vars"
+
 /** Apply a theme + mode to the whole app immediately (no reload). */
 export function applyThemeTokens(themeId, mode) {
   const resolvedId = resolveThemeId(themeId)
@@ -321,6 +324,23 @@ export function applyThemeTokens(themeId, mode) {
     const meta = doc.querySelector('meta[name="theme-color"]')
     if (meta && vars["--background"]) {
       meta.setAttribute("content", vars["--background"])
+    }
+    // Persist the exact applied map so the synchronous bootstrap in
+    // index.html can re-apply it before first paint on the next visit.
+    // Best-effort only: private mode / quota errors must never break theming.
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(
+          THEME_VARS_STORAGE_KEY,
+          JSON.stringify({
+            themeId: resolvedId,
+            mode: resolvedMode,
+            vars,
+          }),
+        )
+      }
+    } catch {
+      // Non-fatal persistence failure.
     }
   } else {
     // No DOM (SSR/tests): still persist nothing, just report the resolution.

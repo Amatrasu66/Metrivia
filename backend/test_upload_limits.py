@@ -3,7 +3,7 @@
 Run from the backend directory with:
     .venv\\Scripts\\python -m unittest test_upload_limits -v
 
-Covers the Phase E 50 MiB ceiling:
+Covers the Phase F 20 MiB ceiling:
 - files at/below the limit are accepted with a backward-compatible payload;
 - files above the limit get a JSON 413 (never a crash or HTML page);
 - non-CSV uploads stay rejected;
@@ -31,9 +31,9 @@ class UploadLimitTest(unittest.TestCase):
     def setUpClass(cls):
         cls.client = app.test_client()
 
-    def test_limit_constant_is_50mib(self):
-        self.assertEqual(MAX_UPLOAD_MB, 50)
-        self.assertEqual(MAX_UPLOAD_BYTES, 50 * 1024 * 1024)
+    def test_limit_constant_is_20mib(self):
+        self.assertEqual(MAX_UPLOAD_MB, 20)
+        self.assertEqual(MAX_UPLOAD_BYTES, 20 * 1024 * 1024)
         self.assertEqual(
             app.config["MAX_CONTENT_LENGTH"], MAX_UPLOAD_BYTES
         )
@@ -70,7 +70,8 @@ class UploadLimitTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 413)
         body = resp.get_json()
         self.assertIn("error", body)
-        self.assertIn("50", body["error"])
+        self.assertIn("20", body["error"])
+        self.assertIn("MiB", body["error"])
         del big
 
     def test_limit_env_override_is_respected(self):

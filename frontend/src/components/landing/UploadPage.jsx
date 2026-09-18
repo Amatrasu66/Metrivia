@@ -35,28 +35,32 @@ export function UploadPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10 lg:gap-10 lg:py-12">
-      {/* Hero */}
+    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-8 overflow-x-clip px-5 py-8 sm:px-6 sm:py-10 lg:gap-10 lg:py-12">
+      {/* Hero — comfortable mobile reading width, no page-wide scroll. */}
       <section
         aria-labelledby="hero-heading"
-        className="flex min-w-0 flex-col items-start gap-5"
+        className="flex min-w-0 flex-col items-start gap-5 sm:gap-6"
       >
         <Badge>Responsive CSV visualization shell</Badge>
-        <div className="flex min-w-0 max-w-3xl flex-col gap-3">
+        <div className="flex min-w-0 max-w-3xl flex-col gap-3 sm:gap-4">
           <h1
             id="hero-heading"
-            className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl lg:text-5xl"
+            className="max-w-[20ch] text-[1.75rem] leading-[1.15] font-semibold tracking-tight text-balance sm:max-w-none sm:text-4xl sm:leading-tight lg:text-5xl"
           >
             Turn CSVs into clear, responsive dashboards
           </h1>
-          <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
+          <p className="max-w-prose text-[0.9375rem] leading-relaxed text-muted-foreground sm:text-base">
             Metrivia is a modern analytics workspace. Start by uploading a
             dataset, then explore it in a dashboard layout built for desktop,
             laptop, tablet, and mobile.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button size="lg" onClick={scrollToUpload} className="w-full sm:w-auto">
+        <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:gap-2">
+          <Button
+            size="lg"
+            onClick={scrollToUpload}
+            className="min-h-12 w-full sm:min-h-11 sm:w-auto"
+          >
             Upload a CSV
             <ArrowRight aria-hidden="true" />
           </Button>
@@ -64,7 +68,7 @@ export function UploadPage({
             size="lg"
             variant="outline"
             onClick={handleViewDashboard}
-            className="w-full sm:w-auto"
+            className="min-h-12 w-full sm:min-h-11 sm:w-auto"
           >
             View dashboard
           </Button>

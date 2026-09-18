@@ -585,5 +585,53 @@ check(
   );
 }
 
+// ---------------------------------------------------------------------------
+// G. Phase F Android physical-chain diagnostics (return value + context)
+// ---------------------------------------------------------------------------
+{
+  const device = diagLib.describeDevice();
+  check(
+    "G1 diagnostic exposes navigator.vibrate return value honest contract",
+    probeResult.result === true &&
+      probeResult.attempted === true &&
+      diagLib.ANDROID_DIAGNOSTIC_PATTERN.join(",") === "100,50,100",
+  );
+  check(
+    "G2 device report carries gesture/visibility/browser context",
+    device &&
+      "visibility" in device &&
+      "hasFocus" in device &&
+      "userActivation" in device &&
+      "looksBrave" in device &&
+      "looksChrome" in device &&
+      "hasVibrate" in device &&
+      "looksAndroid" in device,
+  );
+  const settingsCodeG = stripComments(settingsSrc);
+  check(
+    "G3 settings readout shows vibrate() return + chain (no physical claim)",
+    settingsSrc.includes("navigator.vibrate result") &&
+      settingsSrc.includes("call accepted — not physical proof") &&
+      settingsSrc.includes("browser rejected the call") &&
+      settingsSrc.includes("Document visible") &&
+      settingsSrc.includes("User activation") &&
+      settingsSrc.includes("only you holding the phone") &&
+      !settingsCodeG.includes("navigator.vibrate("),
+  );
+  const hookCodeG = stripComments(hookSrc);
+  check(
+    "G4 direct probe still uses strong [100,50,100] synchronously",
+    hookSrc.includes("runDirectVibrationTest") &&
+      hookSrc.includes("ANDROID_DIAGNOSTIC_PATTERN") &&
+      !hookCodeG.includes("navigator.vibrate("),
+  );
+  check(
+    "G5 semantic haptics stay synchronous via central trigger",
+    hookCodeG.includes("fireAction(trigger") &&
+      !hookCodeG.includes("setTimeout") &&
+      hookCode.includes('trigger("') === false,
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

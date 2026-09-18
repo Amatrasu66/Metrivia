@@ -16,6 +16,7 @@ export {
 export {
   APPEARANCES,
   THEME_DATA_ATTR,
+  THEME_VARS_STORAGE_KEY,
   applyThemeTokens,
   buildThemeCssVars,
   getFeaturedThemes,

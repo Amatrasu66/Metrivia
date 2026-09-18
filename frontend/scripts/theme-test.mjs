@@ -256,5 +256,47 @@ check(
   );
 }
 
+// --- Phase F bootstrap: Graphite first paint ---------------------------------
+{
+  const { readFileSync: readSync } = await import("node:fs");
+  const { fileURLToPath: toPath } = await import("node:url");
+  const root = toPath(new URL("../", import.meta.url));
+  const html = readSync(`${root}index.html`, "utf8");
+  const css = readSync(`${root}src/index.css`, "utf8");
+  const utilsSrc = readSync(`${root}src/lib/themes/theme-utils.js`, "utf8");
+  check(
+    "T21 bootstrap defaults to Graphite (mocha stays selectable, never default)",
+    html.includes('"graphite"') &&
+      html.includes('"mocha-mousse"') &&
+      !html.includes('|| "mocha-mousse"'),
+  );
+  check(
+    "T22 bootstrap validates saved id against known themes + resolves system",
+    html.includes("KNOWN_THEMES") &&
+      html.includes("prefers-color-scheme") &&
+      html.includes("metrivia.theme-id") &&
+      html.includes("metrivia.appearance"),
+  );
+  check(
+    "T23 bootstrap re-applies cached CSS vars before React mounts",
+    html.includes("metrivia.theme-vars") &&
+      html.includes("setProperty") &&
+      utilsSrc.includes("THEME_VARS_STORAGE_KEY") &&
+      utilsSrc.includes("metrivia.theme-vars"),
+  );
+  check(
+    "T24 CSS :root/.dark defaults are Graphite (no Mocha first paint)",
+    css.includes("oklch(0.9551 0 0)") &&
+      css.includes("oklch(0.2178 0 0)") &&
+      !css.includes("oklch(0.9529 0.0146 102.4597)"),
+  );
+  check(
+    "T25 Graphite fresh load resolves to itself in both modes",
+    JSON.stringify(buildThemeCssVars("graphite", "light")) !== "{}" &&
+      JSON.stringify(buildThemeCssVars("graphite", "dark")) !== "{}" &&
+      resolveThemeId("graphite") === "graphite",
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

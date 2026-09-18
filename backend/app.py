@@ -21,15 +21,15 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 from analysis import analyze_dataframe
 
-# Application CSV ceiling: 50 MiB. ONE explicit constant — the route, the
+# Application CSV ceiling: 20 MiB. ONE explicit constant — the route, the
 # manual read cap, and the Flask backstop below all derive from it.
 # NOTE (Render Free honesty): 512 MB RAM / 0.1 CPU means a pathological
-# string-heavy 50 MiB CSV can still exhaust memory during pandas parsing
+# string-heavy 20 MiB CSV can still exhaust memory during pandas parsing
 # (object-dtype amplification). The pipeline below minimizes duplicate
 # full-dataset copies (single parse, temporaries released, streamed JSON
-# instead of one giant string), but 50 MiB is a tested application limit,
+# instead of one giant string), but 20 MiB is a tested application limit,
 # not a guarantee for every possible file on the Free instance.
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -128,7 +128,7 @@ def create_app(cors_origins=None):
         raw = storage.read(MAX_UPLOAD_BYTES + 1)
         if len(raw) > MAX_UPLOAD_BYTES:
             return _error(
-                f"File exceeds the {MAX_UPLOAD_MB} MB limit. "
+                f"File exceeds the {MAX_UPLOAD_MB} MiB limit. "
                 "Please upload a smaller CSV file.",
                 413,
             )
@@ -150,7 +150,7 @@ def create_app(cors_origins=None):
                 500,
             )
         finally:
-            # Release the raw body before analysis/serialization: at 50 MiB
+            # Release the raw body before analysis/serialization: at 20 MiB
             # it is the largest single object we can drop early.
             del raw
 
@@ -169,7 +169,7 @@ def create_app(cors_origins=None):
         return (
             jsonify(
                 {
-                    "error": f"Request exceeds the {MAX_UPLOAD_MB} MB limit. "
+                    "error": f"Request exceeds the {MAX_UPLOAD_MB} MiB limit. "
                     "Please upload a smaller CSV file."
                 }
             ),

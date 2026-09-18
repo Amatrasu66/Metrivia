@@ -8,37 +8,114 @@
       name="description"
       content="Metrivia — responsive CSV data visualization application shell."
     />
-    <meta name="theme-color" content="#f5f0e6" />
+    <meta name="theme-color" content="#f4f4f4" />
     <title>Metrivia — CSV Data Visualization</title>
     <script>
-      // Apply the persisted theme + appearance before first paint to avoid a
-      // light/dark flash. Mirrors src/hooks/useAppSettings.jsx +
-      // src/lib/themes/theme-utils.js logic. Token values themselves are
-      // applied by React on mount; this sets the mode + theme id early.
+      // Phase F theme bootstrap: Graphite must be the FIRST painted theme.
+      // Runs synchronously before first paint / before React mounts.
+      // Mirrors src/lib/themes/theme-utils.js + app-settings-storage.js:
+      //   stored theme id -> validated id (Graphite fallback)
+      //   stored appearance -> light/dark/system (legacy key migrated)
+      //   system -> matchMedia resolution
+      // Then sets data-theme + .dark + colorScheme AND re-applies the last
+      // persisted CSS variables (if any) so returning users with a non-
+      // Graphite theme do not flash Graphite first. React's SettingsProvider
+      // reads the same keys and re-applies the same values (no conflict).
       try {
-        var appearance = localStorage.getItem("metrivia.appearance");
+        var KNOWN_THEMES = [
+          "mocha-mousse",
+          "nebula",
+          "monochrome",
+          "lavender",
+          "candy",
+          "amber",
+          "warm-paper",
+          "iris",
+          "twilight",
+          "arcade",
+          "graphite",
+          "sage",
+          "terminal",
+          "emerald",
+          "brutalist",
+          "doodle",
+          "orchid",
+          "moss",
+          "parchment",
+          "mint",
+        ];
+        var appearance = null;
+        try {
+          appearance = localStorage.getItem("metrivia.appearance");
+        } catch (e) {}
         if (
           appearance !== "light" &&
           appearance !== "dark" &&
           appearance !== "system"
         ) {
-          var legacy = localStorage.getItem("metrivia-theme");
+          var legacy = null;
+          try {
+            legacy = localStorage.getItem("metrivia-theme");
+          } catch (e) {}
           appearance =
             legacy === "light" || legacy === "dark" ? legacy : "system";
         }
         var mode =
           appearance === "system"
-            ? matchMedia("(prefers-color-scheme: dark)").matches
+            ? window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches
               ? "dark"
               : "light"
             : appearance;
+        var storedId = null;
+        try {
+          storedId = localStorage.getItem("metrivia.theme-id");
+        } catch (e) {}
         var themeId =
-          localStorage.getItem("metrivia.theme-id") || "mocha-mousse";
-        document.documentElement.setAttribute("data-theme", themeId);
+          KNOWN_THEMES.indexOf(storedId) !== -1 ? storedId : "graphite";
+        var el = document.documentElement;
+        el.setAttribute("data-theme", themeId);
         if (mode === "dark") {
-          document.documentElement.classList.add("dark");
+          el.classList.add("dark");
+        } else {
+          el.classList.remove("dark");
         }
-        document.documentElement.style.colorScheme = mode;
+        el.style.colorScheme = mode;
+        // Re-apply last persisted variables for exact first paint.
+        // Written by applyThemeTokens() on every theme/mode change.
+        try {
+          var cached = localStorage.getItem("metrivia.theme-vars");
+          if (cached) {
+            var parsed = JSON.parse(cached);
+            if (
+              parsed &&
+              parsed.themeId === themeId &&
+              parsed.mode === mode &&
+              parsed.vars &&
+              typeof parsed.vars === "object"
+            ) {
+              for (var key in parsed.vars) {
+                if (
+                  Object.prototype.hasOwnProperty.call(parsed.vars, key) &&
+                  key.indexOf("--") === 0
+                ) {
+                  el.style.setProperty(key, parsed.vars[key]);
+                }
+              }
+            }
+          }
+        } catch (e) {}
+        // Keep the theme-color meta in sync with the resolved mode so the
+        // browser chrome paints Graphite immediately (no Mocha tint).
+        try {
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute(
+              "content",
+              mode === "dark" ? "#383838" : "#f4f4f4",
+            );
+          }
+        } catch (e) {}
       } catch (e) {}
     </script>
   </head>

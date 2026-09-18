@@ -75,7 +75,7 @@ export function CsvUploadZone({
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "flex min-w-0 flex-col items-center gap-4 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors sm:px-8 sm:py-10",
+          "flex min-w-0 flex-col items-center gap-4 rounded-xl border-2 border-dashed px-5 py-6 text-center transition-colors sm:gap-4 sm:px-8 sm:py-10",
           isDragging
             ? "border-primary bg-accent"
             : "border-border bg-muted/30",
@@ -83,15 +83,15 @@ export function CsvUploadZone({
       >
         <span
           aria-hidden="true"
-          className="flex size-12 items-center justify-center rounded-full bg-secondary text-secondary-foreground"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground"
         >
           <Upload className="size-5" />
         </span>
-        <div className="flex min-w-0 flex-col items-center gap-1">
-          <p className="text-sm font-medium sm:text-base">
+        <div className="flex min-w-0 max-w-sm flex-col items-center gap-1.5">
+          <p className="text-[0.9375rem] leading-snug font-medium text-balance sm:text-base">
             Drag and drop your CSV here
           </p>
-          <p className="text-xs text-muted-foreground sm:text-sm">
+          <p className="text-xs leading-relaxed text-muted-foreground text-balance sm:text-sm">
             or use the button below · .csv only · up to {MAX_CSV_LABEL}
           </p>
         </div>
@@ -110,15 +110,16 @@ export function CsvUploadZone({
             event.target.value = ""
           }}
         />
-        <Button onClick={openFileDialog}>
+        <Button onClick={openFileDialog} className="min-h-12 w-full sm:min-h-10 sm:w-auto">
           <Upload aria-hidden="true" />
           Upload CSV
         </Button>
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5 sm:gap-2">
           <Badge variant="outline">.csv</Badge>
           <Badge variant="outline">UTF-8</Badge>
           <Badge variant="outline">Header row expected</Badge>
+          <Badge variant="outline">Max {MAX_CSV_LABEL}</Badge>
         </div>
       </div>
 

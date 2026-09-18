@@ -14,9 +14,9 @@ export function formatFileSize(bytes) {
   return `${value >= 100 ? Math.round(value) : value.toFixed(value >= 10 ? 1 : 0)} ${units[index]}`
 }
 
-/** Application CSV upload ceiling: 50 MiB (backend enforces the same). */
-export const MAX_CSV_BYTES = 50 * 1024 * 1024
-export const MAX_CSV_LABEL = "50 MB"
+/** Application CSV upload ceiling: 20 MiB (backend enforces the same). */
+export const MAX_CSV_BYTES = 20 * 1024 * 1024
+export const MAX_CSV_LABEL = "20 MiB"
 
 export function isCsvFileName(name) {
   return typeof name === "string" && name.toLowerCase().endsWith(".csv")

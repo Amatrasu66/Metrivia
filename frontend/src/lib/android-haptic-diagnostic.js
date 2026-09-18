@@ -70,20 +70,81 @@ function readTouchPoints() {
   }
 }
 
+function readDocumentState() {
+  try {
+    const doc = typeof document !== "undefined" ? document : null
+    if (!doc) {
+      return { visibility: null, hasFocus: null, userActivation: null }
+    }
+    let userActivation = null
+    try {
+      const ua = navigator?.userActivation
+      if (ua) {
+        userActivation = {
+          isActive: ua.isActive ?? null,
+          hasBeenActive: ua.hasBeenActive ?? null,
+        }
+      }
+    } catch {
+      userActivation = null
+    }
+    let hasFocus = null
+    try {
+      hasFocus = typeof doc.hasFocus === "function" ? doc.hasFocus() : null
+    } catch {
+      hasFocus = null
+    }
+    return {
+      visibility: doc.visibilityState ?? null,
+      hasFocus,
+      userActivation,
+    }
+  } catch {
+    return { visibility: null, hasFocus: null, userActivation: null }
+  }
+}
+
+function readBrowserHeuristic() {
+  const ua = readUserAgent()
+  const looksBrave =
+    /Brave/i.test(ua) ||
+    (typeof navigator !== "undefined" && navigator.brave != null)
+  return {
+    looksBrave,
+    looksChrome: /Chrome|Chromium|CriOS/i.test(ua),
+    looksFirefox: /Firefox|FxiOS/i.test(ua),
+    looksSafari:
+      /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Android/i.test(ua),
+  }
+}
+
 /**
  * Best-effort device description for the diagnostic readout. The platform
  * label is a UA heuristic (labeled as such in the UI), never a claim about
- * the motor.
+ * the motor. Also captures the physical-vibration chain from the Phase F
+ * spec: document visibility/focus, user activation (gesture context), and
+ * browser heuristics — so a `true` return with no felt vibration can be
+ * narrowed to a browser/system setting (battery saver, vibration off,
+ * Brave shields, background tab) instead of an app bug.
  */
 export function describeDevice() {
   const ua = readUserAgent()
   const touchPoints = readTouchPoints()
+  const docState = readDocumentState()
+  const browser = readBrowserHeuristic()
   return {
     userAgentSnippet: ua ? ua.slice(0, 120) : "",
     touchPoints,
     touchDevice: typeof touchPoints === "number" ? touchPoints > 0 : null,
     looksAndroid: /Android/i.test(ua),
     hasVibrate: hasVibrationApi(),
+    visibility: docState.visibility,
+    hasFocus: docState.hasFocus,
+    userActivation: docState.userActivation,
+    looksBrave: browser.looksBrave,
+    looksChrome: browser.looksChrome,
+    looksFirefox: browser.looksFirefox,
+    looksSafari: browser.looksSafari,
   }
 }
 

@@ -107,7 +107,7 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   // Row windowing lives above the early return too (the virtualizer owns
   // hooks): with no dataset the count is simply zero. Only rows near the
   // viewport become DOM nodes (~50 at a time regardless of dataset size),
-  // so a 50 MiB upload cannot create hundreds of thousands of cells.
+  // so a 20 MiB upload cannot create hundreds of thousands of cells.
   // Top/bottom spacer rows preserve the full scroll height and keep every
   // column aligned with the sticky header — no absolute positioning, no
   // per-row measurement, no animation of the table itself.

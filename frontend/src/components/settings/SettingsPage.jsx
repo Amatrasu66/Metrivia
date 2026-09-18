@@ -61,11 +61,31 @@ function HapticProbeReadout({ report, isIos }) {
         ? `yes (${device.touchPoints} touch points)`
         : "no"
   const attempted = vibrate?.attempted === true
+  // Phase F: surface the raw navigator.vibrate() boolean return value.
+  // `true` = browser ACCEPTED the call (never physical proof); `false` =
+  // browser rejected it (policy, background tab, blocked gesture).
   const resultLabel = !attempted
     ? "— (not attempted)"
     : vibrate.error != null
       ? `threw: ${vibrate.error}`
       : `${String(vibrate.result)}${vibrate.result === true ? " (call accepted — not physical proof)" : " (browser rejected the call)"}`
+  const visibilityLabel = device.visibility ?? "unknown"
+  const focusLabel =
+    device.hasFocus == null ? "unknown" : device.hasFocus ? "yes" : "no"
+  const activation = device.userActivation
+  const activationLabel =
+    activation == null
+      ? "unknown"
+      : `active=${String(activation.isActive)} beenActive=${String(activation.hasBeenActive)}`
+  const browserLabel = device.looksBrave
+    ? "Brave (heuristic)"
+    : device.looksChrome
+      ? "Chrome/Chromium (heuristic)"
+      : device.looksFirefox
+        ? "Firefox (heuristic)"
+        : device.looksSafari
+          ? "Safari (heuristic)"
+          : "unknown"
   const patternLabel =
     report.kind === "probe"
       ? `[${ANDROID_DIAGNOSTIC_PATTERN.join(", ")}]`
@@ -103,6 +123,16 @@ function HapticProbeReadout({ report, isIos }) {
         <dd className="min-w-0 break-words font-mono text-foreground">
           {resultLabel}
         </dd>
+        <dt className="text-muted-foreground">Document visible</dt>
+        <dd className="text-foreground">{visibilityLabel}</dd>
+        <dt className="text-muted-foreground">Document focused</dt>
+        <dd className="text-foreground">{focusLabel}</dd>
+        <dt className="text-muted-foreground">User activation</dt>
+        <dd className="min-w-0 break-words font-mono text-foreground">
+          {activationLabel}
+        </dd>
+        <dt className="text-muted-foreground">Browser</dt>
+        <dd className="text-foreground">{browserLabel}</dd>
         <dt className="text-muted-foreground">Reduced motion</dt>
         <dd className="text-foreground">
           {diagnostics.accessibility.prefersReducedMotion ? "on" : "off"}
@@ -156,6 +186,16 @@ function HapticProbeReadout({ report, isIos }) {
           ? "Browser vibration API is available, but physical vibration cannot be verified from JavaScript — only you holding the phone can confirm it."
           : "Vibration API unavailable in this browser."}
       </p>
+      {device.looksAndroid && attempted && vibrate?.result === true ? (
+        <p className="text-xs text-muted-foreground">
+          Call accepted but nothing felt? Check the physical chain: Android
+          Settings → Sound & vibration (vibration on, not silent), battery
+          saver off, Chrome/Brave site settings allow vibration, the tab is
+          visible and tapped directly (not a background tab), and — for
+          Brave — Shields are not blocking it. Async events (upload success)
+          fire outside the tap gesture, so test with the buttons above first.
+        </p>
+      ) : null}
     </div>
   )
 }

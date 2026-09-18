@@ -226,7 +226,7 @@ function Shell() {
       !signal.aborted &&
       workspaceExists(targetId)
 
-    // Reusable pre-upload gate (extension + 50 MiB size from the actual
+    // Reusable pre-upload gate (extension + 20 MiB size from the actual
     // File) — no network for invalid files. The backend limit stays
     // authoritative; this only saves a doomed upload.
     const validation = validateCsvFile(file)

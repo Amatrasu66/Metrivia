@@ -1,13 +1,15 @@
-// Metrivia UI/performance audit (Phase E) — dependency-free source checks.
+// Metrivia UI/performance audit (Phase F) — dependency-free source checks.
 //
-// Verifies the navigation cleanup, animation safeguards, and 50 MiB upload
+// Verifies the navigation cleanup, animation safeguards, and 20 MiB upload
 // contract at the source level (fast regression tripwires — not a substitute
 // for profiling or device testing):
 //   navigation cleanup (no tab strip, no Frontend shell, no stray + tab)
 //   animation safeguards (no transition-all, no `transition: all`, memoized
 //     dashboard subtree, single animation library, reduced-motion wiring)
-//   upload contract (frontend 50 MiB constant + validation helper, backend
-//     50 MiB default + JSON 413 path, table windowing present)
+//   header contract (desktop spacer layout, mobile menu with appearance)
+//   theme bootstrap (Graphite first paint, no Mocha default)
+//   upload contract (frontend 20 MiB constant + validation helper, backend
+//     20 MiB default + JSON 413 path, table windowing present)
 //
 // Usage:  npm run ui:audit   (from frontend/)
 // Exit code is non-zero on any failure.
@@ -152,13 +154,16 @@ check(
   );
 }
 
-// --- 50 MiB upload contract ---------------------------------------------------------------
+// --- 20 MiB upload contract ---------------------------------------------------------------
 {
   const format = readSrc("lib/format.js");
   check(
-    "U13 frontend limit is one 50 MiB constant with a validation helper",
-    format.includes("MAX_CSV_BYTES = 50 * 1024 * 1024") &&
-      format.includes("validateCsvFile"),
+    "U13 frontend limit is one 20 MiB constant with a validation helper",
+    format.includes("MAX_CSV_BYTES = 20 * 1024 * 1024") &&
+      format.includes('MAX_CSV_LABEL = "20 MiB"') &&
+      format.includes("validateCsvFile") &&
+      !format.includes("50 * 1024 * 1024") &&
+      !format.includes("50 MB"),
   );
 }
 {
@@ -167,11 +172,71 @@ check(
     "utf8",
   );
   check(
-    "U14 backend default is 50 MiB with one bytes constant + JSON 413 path",
-    app.includes('MAX_UPLOAD_MB", "50"') &&
+    "U14 backend default is 20 MiB with one bytes constant + JSON 413 path",
+    app.includes('MAX_UPLOAD_MB", "20"') &&
       app.includes("MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024") &&
-      app.includes("RequestEntityTooLarge"),
+      app.includes("RequestEntityTooLarge") &&
+      app.includes("MiB limit") &&
+      !app.includes('"50"'),
     "",
+  );
+}
+{
+  const zone = stripComments(readSrc("components/upload/CsvUploadZone.jsx"));
+  check(
+    "U14b upload UI says 20 MiB with no stale 50 MB references",
+    zone.includes("MAX_CSV_LABEL") && !zone.includes("50 MB"),
+  );
+}
+{
+  const header = stripComments(
+    readSrc("components/layout/AppHeader.jsx"),
+  );
+  check(
+    "U17 desktop header uses brand/workspace/spacer/nav layout",
+    header.includes("flex-1") &&
+      header.includes('aria-label="Primary"') &&
+      header.includes("hidden shrink-0") &&
+      !header.includes("ml-auto flex shrink-0"),
+  );
+  check(
+    "U18 mobile header keeps only brand/workspace/menu visible",
+    header.includes("mobile-menu-button") &&
+      header.includes("hidden") &&
+      header.includes("md:flex") &&
+      header.includes("md:hidden") &&
+      header.includes('aria-controls="mobile-nav"'),
+  );
+  check(
+    "U19 mobile menu carries Upload/Dashboard/Settings + appearance",
+    header.includes('aria-label="Mobile"') &&
+      header.includes('aria-label="Appearance"') &&
+      header.includes("handleAppearance") &&
+      header.includes("min-h-11"),
+  );
+  check(
+    "U20 mobile menu closes on Escape with focus return",
+    header.includes('"Escape"') &&
+      header.includes("mobile-menu-button"),
+  );
+}
+{
+  const html = readFileSync(join(rootDir, "index.html"), "utf8");
+  check(
+    "U21 theme bootstrap defaults to Graphite with known-id validation",
+    html.includes('"graphite"') &&
+      html.includes("KNOWN_THEMES") &&
+      html.includes("metrivia.theme-vars") &&
+      !html.includes('|| "mocha-mousse"') &&
+      html.includes("mocha-mousse"),
+  );
+  const css = readSrc("index.css");
+  check(
+    "U22 CSS first-paint defaults are Graphite (no Mocha tokens)",
+    css.includes("Graphite is the first-painted theme") &&
+      css.includes("oklch(0.9551 0 0)") &&
+      css.includes("oklch(0.2178 0 0)") &&
+      !css.includes("oklch(0.9529 0.0146 102.4597)"),
   );
 }
 {
