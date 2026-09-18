@@ -38,15 +38,44 @@ const VIEW_BY_TYPE = {
  * underlying file changes (tracked by filename), so adjusting filters
  * never wipes the user's chart setup. `emptyAction` (e.g. a Clear filters
  * button) renders inside the empty state when the current view has no rows.
+ *
+ * Workspace mode (Phase C): pass `config` + `onConfigChange` to lift the
+ * configuration into the workspace store so it survives tab switches and
+ * view navigation. The parent then owns resets (fresh defaults on upload);
+ * the filename reset effect below only runs in uncontrolled mode. When the
+ * props are absent the builder keeps its original local state untouched.
  */
-export function ChartBuilder({ dataset, emptyAction = null }) {
-  const [config, setConfig] = useState(() => defaultChartConfig(dataset))
+export function ChartBuilder({
+  dataset,
+  emptyAction = null,
+  config: controlledConfig,
+  onConfigChange,
+}) {
+  const [localConfig, setLocalConfig] = useState(() =>
+    defaultChartConfig(dataset),
+  )
+  const controlled =
+    controlledConfig !== undefined && typeof onConfigChange === "function"
+  // Controlled configs are always objects (the workspace store seeds fresh
+  // defaults); fall back to local state defensively so render never crashes.
+  const config = controlled ? (controlledConfig ?? localConfig) : localConfig
+  const setConfig = (updater) => {
+    if (controlled) {
+      onConfigChange(
+        typeof updater === "function" ? updater(config) : updater,
+      )
+    } else {
+      setLocalConfig(updater)
+    }
+  }
   const { chartSelect } = useMetriviaHaptics()
 
   // A new upload replaces the file: restart from fresh defaults. Filter
   // changes only swap the dataset object, so they must not reset config.
+  // Skipped in workspace mode — the workspace sets defaults on upload.
   const datasetKey = dataset?.filename ?? null
   useEffect(() => {
+    if (controlled) return
     setConfig(defaultChartConfig(dataset))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetKey])

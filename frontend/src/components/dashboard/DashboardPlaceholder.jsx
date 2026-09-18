@@ -43,6 +43,8 @@ export function DashboardPlaceholder({
   filters,
   onFiltersChange,
   onUpload,
+  chartConfig,
+  onChartConfigChange,
 }) {
   // Hooks stay above the early return. All helpers tolerate a null
   // dataset; the empty branch below renders before any of it is used.
@@ -204,6 +206,8 @@ export function DashboardPlaceholder({
         <CardContent>
           <ChartBuilder
             dataset={filteredDataset}
+            config={chartConfig}
+            onConfigChange={onChartConfigChange}
             emptyAction={
               filtersActive ? (
                 <Button variant="outline" size="sm" onClick={resetFilters}>

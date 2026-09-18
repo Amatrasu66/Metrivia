@@ -1,6 +1,14 @@
 import { AppHeader } from "@/components/layout/AppHeader"
+import { WorkspaceTabs } from "@/components/workspaces/WorkspaceTabs"
 
-export function AppLayout({ activeView, onNavigate, children }) {
+export function AppLayout({
+  activeView,
+  onNavigate,
+  onCreateWorkspace,
+  onSelectWorkspace,
+  onCloseWorkspace,
+  children,
+}) {
   return (
     <div className="flex min-h-svh w-full max-w-full flex-col overflow-x-clip bg-background text-foreground">
       <a
@@ -10,6 +18,11 @@ export function AppLayout({ activeView, onNavigate, children }) {
         Skip to content
       </a>
       <AppHeader activeView={activeView} onNavigate={onNavigate} />
+      <WorkspaceTabs
+        onCreate={onCreateWorkspace}
+        onSelect={onSelectWorkspace}
+        onClose={onCloseWorkspace}
+      />
       <main id="main-content" className="w-full max-w-full flex-1">
         {children}
       </main>

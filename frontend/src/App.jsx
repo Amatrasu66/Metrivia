@@ -4,8 +4,11 @@ import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
 import { SettingsPage } from "@/components/settings/SettingsPage"
 import { SettingsProvider } from "@/hooks/SettingsProvider"
+import { WorkspaceProvider } from "@/hooks/WorkspaceProvider"
+import { useWorkspaces } from "@/hooks/useWorkspaces"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
+import { defaultChartConfig } from "@/lib/chart-data"
 import { defaultFilterState } from "@/lib/filter-data"
 import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
 
@@ -45,31 +48,63 @@ function delay(ms, signal) {
 export default function App() {
   return (
     <SettingsProvider>
-      <Shell />
+      <WorkspaceProvider>
+        <Shell />
+      </WorkspaceProvider>
     </SettingsProvider>
   )
 }
 
 // Page-state navigation (no router): "upload" | "dashboard" | "settings".
 // Settings is reachable from everywhere and never touches dataset state.
+// The view is global (sections, not datasets); per-workspace workflow state
+// (upload status, dataset, filters, chart config) lives in the workspace
+// store and follows the active tab.
 function Shell() {
   const [view, setView] = useState("upload")
-  // idle | waking | wake-ready | uploading | analyzing | ready | error
-  const [status, setStatus] = useState("idle")
-  // Wall-clock moment the current backend wait started; drives the
-  // progressive cold-start timer. Reset on every new upload flow.
-  const [wakeStartedAt, setWakeStartedAt] = useState(null)
-  const [selectedFile, setSelectedFile] = useState(null)
-  // Dataset analysis payload returned by POST /api/upload (null until success).
-  const [dataset, setDataset] = useState(null)
-  // Global dashboard filters (reset on every upload/remove alongside dataset).
-  const [filters, setFilters] = useState(() => defaultFilterState(null))
-  const [errorTitle, setErrorTitle] = useState("")
-  const [errorMessage, setErrorMessage] = useState("")
-  // Whether the error state may retry the preserved File without reselection.
-  const [canRetryUpload, setCanRetryUpload] = useState(false)
+  const {
+    workspaces,
+    activeId,
+    activeWorkspace,
+    createWorkspace,
+    closeWorkspace,
+    setActiveWorkspace,
+    updateWorkspace,
+    resetWorkspace,
+  } = useWorkspaces()
+  // Active workflow state (all per-workspace; Settings stays global).
+  const status = activeWorkspace?.status ?? "idle"
+  const wakeStartedAt = activeWorkspace?.wakeStartedAt ?? null
+  const dataset = activeWorkspace?.dataset ?? null
+  const filters = activeWorkspace?.filters ?? defaultFilterState(null)
+  const chartConfig =
+    activeWorkspace?.chartConfig ?? defaultChartConfig(null)
+  const errorTitle = activeWorkspace?.errorTitle ?? ""
+  const errorMessage = activeWorkspace?.errorMessage ?? ""
+  // The file card shows the in-flight file, else the uploaded dataset name.
+  const selectedFile = activeWorkspace?.file
+    ? {
+        name: activeWorkspace.file.name,
+        size: activeWorkspace.file.size,
+      }
+    : dataset
+      ? {
+          name: dataset.filename,
+          size: activeWorkspace?.fileSize ?? 0,
+        }
+      : null
+  const canRetryUpload =
+    activeWorkspace?.canRetry === true && activeWorkspace?.file != null
+  // Single-flight upload machine: starting a new upload anywhere aborts the
+  // previous one (same as before workspaces). The async flow is tagged with
+  // the originating workspace id so a late response can never land in the
+  // wrong workspace; results for closed workspaces are dropped safely.
   const abortRef = useRef(null)
   const flowRef = useRef(0)
+  const workspacesRef = useRef(workspaces)
+  useEffect(() => {
+    workspacesRef.current = workspaces
+  })
   const { success: hapticSuccess, error: hapticError } = useMetriviaHaptics()
   // Haptic guards: each success/error/wake-ready beat must fire exactly once
   // per event, never on re-renders. Object/key identity (not status alone)
@@ -78,9 +113,6 @@ function Shell() {
   const lastWakeReadyKeyRef = useRef(null)
   const lastErrorKeyRef = useRef(null)
   const prevStatusRef = useRef("idle")
-  // The actual File being uploaded, preserved across backend cold starts so
-  // "Try again" never forces the user to re-choose the CSV.
-  const pendingFileRef = useRef(null)
 
   useEffect(() => {
     return () => {
@@ -88,6 +120,22 @@ function Shell() {
       abortRef.current?.abort()
     }
   }, [])
+
+  // Workspace switches must never fire transition haptics: re-baseline the
+  // guards to the newly active workspace before the firing effects below
+  // run (declaration order). An upload that finished while its workspace
+  // was inactive stays silent — haptics confirm the action you are viewing.
+  useEffect(() => {
+    prevStatusRef.current = status
+    if (status === "ready" && dataset) {
+      lastSuccessDatasetRef.current = dataset
+    }
+    if (status === "error") {
+      lastErrorKeyRef.current = `${errorTitle}::${errorMessage}`
+    }
+    lastWakeReadyKeyRef.current = wakeStartedAt
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId])
 
   // CSV analysis success: fire once per successful operation. `dataset` is a
   // fresh object per success, so identity comparison suppresses re-renders
@@ -134,18 +182,38 @@ function Shell() {
     window.scrollTo({ top: 0 })
   }
 
-  const failWith = (message, { title = UPLOAD_FAILED_TITLE, retryable = false } = {}) => {
-    setDataset(null)
-    setFilters(defaultFilterState(null))
-    setStatus("error")
-    setErrorTitle(title)
-    setErrorMessage(message)
-    setCanRetryUpload(retryable && pendingFileRef.current != null)
+  const workspaceExists = (id) =>
+    workspacesRef.current.some((ws) => ws.id === id)
+
+  const failWith = (
+    targetId,
+    message,
+    { title = UPLOAD_FAILED_TITLE, retryable = false } = {},
+  ) => {
+    if (!workspaceExists(targetId)) return
+    const target = workspacesRef.current.find((ws) => ws.id === targetId)
+    const keepFile = retryable && target?.file != null
+    updateWorkspace(targetId, {
+      dataset: null,
+      filters: defaultFilterState(null),
+      status: "error",
+      errorTitle: title,
+      errorMessage: message,
+      // A retryable network error keeps the File so "Try again" resumes
+      // without reselection; anything else drops it.
+      file: keepFile ? target.file : null,
+      fileName: keepFile ? target.fileName : null,
+      fileSize: keepFile ? target.fileSize : 0,
+      canRetry: keepFile,
+    })
   }
 
   const handleFilesSelected = async (fileList) => {
     const file = fileList?.[0]
     if (!file) return
+    // The upload belongs to whichever workspace is active right now, even
+    // if the user switches tabs before it finishes.
+    const targetId = activeId
 
     // Cancel any in-flight upload before starting a new one.
     abortRef.current?.abort()
@@ -154,36 +222,50 @@ function Shell() {
     const controller = new AbortController()
     abortRef.current = controller
     const { signal } = controller
-    const isCurrent = () => flowRef.current === flow && !signal.aborted
+    const isCurrent = () =>
+      flowRef.current === flow &&
+      !signal.aborted &&
+      workspaceExists(targetId)
 
     // Basic client-side checks first — no network needed for these.
     if (!isCsvFileName(file.name)) {
-      setSelectedFile(null)
-      pendingFileRef.current = null
+      updateWorkspace(targetId, {
+        file: null,
+        fileName: null,
+        fileSize: 0,
+      })
       failWith(
+        targetId,
         `“${file.name}” is not a .csv file. Please choose a file ending in .csv and try again.`,
         { title: INVALID_FILE_TITLE },
       )
       return
     }
     if (file.size > MAX_CSV_BYTES) {
-      setSelectedFile(null)
-      pendingFileRef.current = null
+      updateWorkspace(targetId, {
+        file: null,
+        fileName: null,
+        fileSize: 0,
+      })
       failWith(
+        targetId,
         `“${file.name}” exceeds the 10 MB limit. Please choose a smaller CSV file.`,
         { title: INVALID_FILE_TITLE },
       )
       return
     }
 
-    pendingFileRef.current = file
-    setSelectedFile({ name: file.name, size: file.size })
-    setDataset(null)
-    setErrorTitle("")
-    setErrorMessage("")
-    setCanRetryUpload(false)
-    setWakeStartedAt(Date.now())
-    setStatus("uploading")
+    updateWorkspace(targetId, {
+      file,
+      fileName: file.name,
+      fileSize: file.size,
+      dataset: null,
+      errorTitle: "",
+      errorMessage: "",
+      canRetry: false,
+      wakeStartedAt: Date.now(),
+      status: "uploading",
+    })
 
     let analyzingTimer = null
     let didWake = false
@@ -195,94 +277,131 @@ function Shell() {
         signal,
         onWaking: () => {
           didWake = true
-          if (isCurrent()) setStatus("waking")
+          if (isCurrent()) updateWorkspace(targetId, { status: "waking" })
         },
       })
       if (!isCurrent()) return
       if (didWake) {
         // Cold start that recovered: show the brief "Backend ready" beat,
         // then continue with the preserved File automatically.
-        setStatus("wake-ready")
+        updateWorkspace(targetId, { status: "wake-ready" })
         await delay(WAKE_SUCCESS_MS, signal)
         if (!isCurrent()) return
       }
-      setStatus("uploading")
+      updateWorkspace(targetId, { status: "uploading" })
 
       // While the upload request is pending, a slow response almost always
       // means the backend has the file and Pandas is analyzing it.
       analyzingTimer = setTimeout(() => {
-        if (isCurrent()) setStatus("analyzing")
+        if (isCurrent()) updateWorkspace(targetId, { status: "analyzing" })
       }, ANALYZING_GRACE_MS)
 
       const result = await uploadCsv(file, { signal })
       if (!isCurrent()) return
       // The response has arrived: make the analyzing stage explicit while
       // the dashboard state is finalized so it can actually paint.
-      setStatus("analyzing")
+      updateWorkspace(targetId, { status: "analyzing" })
       await delay(ANALYZING_MIN_VISIBLE_MS, signal)
       if (!isCurrent()) return
 
-      setDataset(result)
-      setFilters(defaultFilterState(result))
-      setSelectedFile({
-        name: result?.filename ?? file.name,
-        size: file.size,
+      // The result lands in the workspace that started the upload — never
+      // the currently active one. Fresh filters + chart defaults match the
+      // new file; the tab label follows the actual filename.
+      updateWorkspace(targetId, {
+        dataset: result,
+        filters: defaultFilterState(result),
+        chartConfig: defaultChartConfig(result),
+        file: null,
+        fileName: result?.filename ?? file.name,
+        fileSize: file.size,
+        errorTitle: "",
+        errorMessage: "",
+        canRetry: false,
+        status: "ready",
       })
-      pendingFileRef.current = null
-      setCanRetryUpload(false)
-      setStatus("ready")
     } catch (err) {
-      // Ignore cancellations from Remove / a newer selection / unmount.
+      // Ignore cancellations from Remove / a newer selection / unmount, and
+      // silently drop results for workspaces closed mid-upload.
       if (!isCurrent() || err?.name === "AbortError" || signal.aborted) return
       if (err instanceof ApiError && err.isNetworkError) {
         // Cold start that never finished (or a dropped connection): keep the
         // File so "Try again" resumes without reselection.
-        failWith(BACKEND_UNAVAILABLE_MESSAGE, {
+        failWith(targetId, BACKEND_UNAVAILABLE_MESSAGE, {
           title: BACKEND_UNAVAILABLE_TITLE,
           retryable: true,
         })
         return
       }
-      pendingFileRef.current = null
-      setDataset(null)
-      setStatus("error")
-      setErrorTitle(UPLOAD_FAILED_TITLE)
-      setCanRetryUpload(false)
-      setErrorMessage(
-        err instanceof ApiError
-          ? err.message
-          : "Something went wrong while uploading. Please try again.",
-      )
+      updateWorkspace(targetId, {
+        file: null,
+        fileName: null,
+        fileSize: 0,
+        dataset: null,
+        status: "error",
+        errorTitle: UPLOAD_FAILED_TITLE,
+        canRetry: false,
+        errorMessage:
+          err instanceof ApiError
+            ? err.message
+            : "Something went wrong while uploading. Please try again.",
+      })
     } finally {
       if (analyzingTimer !== null) clearTimeout(analyzingTimer)
     }
   }
 
   const handleRetryUpload = () => {
-    const file = pendingFileRef.current
+    const file = activeWorkspace?.file
     if (!file) return
     handleFilesSelected([file])
   }
 
+  // "Remove file" clears the ACTIVE workspace back to Untitled (aborting any
+  // upload it started). Other workspaces are untouched.
   const resetUpload = () => {
     flowRef.current += 1
     abortRef.current?.abort()
     abortRef.current = null
-    pendingFileRef.current = null
-    setSelectedFile(null)
-    setDataset(null)
-    setFilters(defaultFilterState(null))
-    setErrorTitle("")
-    setErrorMessage("")
-    setCanRetryUpload(false)
-    setWakeStartedAt(null)
-    setStatus("idle")
+    resetWorkspace(activeId)
   }
 
   const handleContinue = () => setView("dashboard")
 
+  // Workspace tab actions (the tab bar itself owns haptics + a11y).
+  const handleCreateWorkspace = () => {
+    createWorkspace()
+    setView("upload")
+    window.scrollTo({ top: 0 })
+  }
+
+  const handleSelectWorkspace = (id) => {
+    setActiveWorkspace(id)
+    const target = workspaces.find((ws) => ws.id === id)
+    // Empty workspaces always land on Upload; workspaces with data keep the
+    // current section so tab switches never yank the view away.
+    if (target && !target.dataset) setView("upload")
+    window.scrollTo({ top: 0 })
+  }
+
+  const handleCloseWorkspace = (id) => {
+    const nextActiveId = closeWorkspace(id)
+    const next =
+      nextActiveId === id
+        ? null
+        : workspaces.find((ws) => ws.id === nextActiveId)
+    // The close reducer never leaves zero workspaces; a missing entry means
+    // the final tab was replaced by a fresh empty one → show Upload.
+    if (!next || !next.dataset) setView("upload")
+  }
+
   return (
-    <AppLayout activeView={view} onNavigate={handleNavigate}>
+    <AppLayout
+      activeView={view}
+      onNavigate={handleNavigate}
+      onCreateWorkspace={handleCreateWorkspace}
+      onSelectWorkspace={handleSelectWorkspace}
+      onCloseWorkspace={handleCloseWorkspace}
+    >
       {view === "settings" ? (
         <SettingsPage />
       ) : view === "upload" ? (
@@ -304,7 +423,13 @@ function Shell() {
         <DashboardLayout
           dataset={dataset}
           filters={filters}
-          onFiltersChange={setFilters}
+          onFiltersChange={(next) =>
+            updateWorkspace(activeId, { filters: next })
+          }
+          chartConfig={chartConfig}
+          onChartConfigChange={(next) =>
+            updateWorkspace(activeId, { chartConfig: next })
+          }
           onBackToUpload={() => handleNavigate("upload")}
           onRemoveFile={resetUpload}
         />

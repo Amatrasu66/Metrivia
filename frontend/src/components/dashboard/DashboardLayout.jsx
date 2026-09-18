@@ -16,6 +16,8 @@ export function DashboardLayout({
   dataset,
   filters,
   onFiltersChange,
+  chartConfig,
+  onChartConfigChange,
   onBackToUpload,
   onRemoveFile,
 }) {
@@ -133,6 +135,8 @@ export function DashboardLayout({
           dataset={dataset}
           filters={filters}
           onFiltersChange={onFiltersChange}
+          chartConfig={chartConfig}
+          onChartConfigChange={onChartConfigChange}
           onUpload={onBackToUpload}
         />
       </div>
