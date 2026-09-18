@@ -233,7 +233,7 @@ check(
 check(
   "C2 diagnostics expose no sensitive data (keys allowlisted)",
   Object.keys(diag).sort().join(",") ===
-    "accessibility,action,category,pattern,platform,scale,settings,skipped,triggerCalled",
+    "accessibility,action,category,pattern,platform,scale,settings,skipReason,skipped,triggerCalled",
 );
 fakeNavigator.userAgent = IPHONE_UA;
 delete fakeNavigator.vibrate;
@@ -299,11 +299,19 @@ const srcFiles = walkSrc(srcDir);
 }
 {
   // Executable calls only — comments and `typeof x === "function"` reads
-  // are not vibration requests.
+  // are not vibration requests. Exactly one file may call it: the central
+  // Phase A diagnostic (lib/android-haptic-diagnostic.js), used only through
+  // the hook's synchronous probe. Components must never call it directly.
+  const allowedDirect = new Set(["lib/android-haptic-diagnostic.js"]);
   const direct = srcFiles
     .filter((f) => stripComments(readFileSync(f, "utf8")).includes("navigator.vibrate("))
     .map((f) => f.slice(srcDir.length).replace(/\\/g, "/"));
-  check("D4 no component calls navigator.vibrate directly", direct.length === 0, direct.join(", "));
+  const unexpected = direct.filter((f) => !allowedDirect.has(f));
+  check(
+    "D4 direct vibrate() lives only in the central diagnostic",
+    direct.length === 1 && unexpected.length === 0,
+    direct.join(", "),
+  );
 }
 
 const iosSwitchSrc = srcFile("components/haptics/IosHapticSwitch.jsx");
@@ -390,7 +398,8 @@ const MATRIX = [
   ["appearance light/dark/system", "components/settings/SettingsPage.jsx", "handleAppearance", "semantic tap", "native tick (inactive only)"],
   ["master haptic toggle", "components/settings/SettingsPage.jsx", "handleMasterToggle", "semantic tap (on-enable)", "native row tick (on-enable)"],
   ["settings reset", "components/settings/SettingsPage.jsx", "handleReset", "semantic tap (post-reset defaults)", "native Button tick"],
-  ["settings test haptic", "components/settings/SettingsPage.jsx", "onClick={() => tap()}", "semantic tap", "intentionally silent (no programmatic tick)"],
+  ["settings test haptic", "components/settings/SettingsPage.jsx", "handleTestHaptic", "direct probe [100,50,100]", "API-unavailable message"],
+  ["settings semantic tap", "components/settings/SettingsPage.jsx", "handleTestSemanticTap", "semantic tap", "intentionally silent (no programmatic tick)"],
   ["sliders", "components/settings/HapticSlider.jsx", "no haptics while dragging", "silent (no spam)", "silent (no spam)"],
   ["backend ready beat", "App.jsx", "hapticSuccess", "async effect (browser policy)", "intentionally silent (async)"],
   ["analysis success", "App.jsx", "hapticSuccess", "async effect (browser policy)", "intentionally silent (async)"],
@@ -411,6 +420,166 @@ pass += wired;
 console.log(`\nCoverage matrix: ${wired}/${MATRIX.length} surfaces wired as classified`);
 for (const [surface, , , android, ios] of MATRIX) {
   console.log(`  - ${surface}: android=${android}; ios=${ios}`);
+}
+
+// ---------------------------------------------------------------------------
+// F. Phase A Android diagnostic path (direct probe + suppression reasons)
+// ---------------------------------------------------------------------------
+const diagLib = await import(
+  `${srcUrl("lib/android-haptic-diagnostic.js")}${bust()}`
+);
+check(
+  "F1 diagnostic probe pattern is the unmistakable [100,50,100]",
+  JSON.stringify([...diagLib.ANDROID_DIAGNOSTIC_PATTERN]) === "[100,50,100]",
+);
+check(
+  "F2 minimal single-shot probe constant is 200",
+  diagLib.ANDROID_DIAGNOSTIC_MINIMAL === 200,
+);
+
+// F3: synchronous direct call — no await between call and observation, so a
+// regression into an async/deferred call would fail this check.
+vibrateCalls.length = 0;
+const probeResult = diagLib.runDirectVibrationTest();
+check(
+  "F3 direct probe calls navigator.vibrate synchronously and reports true",
+  probeResult.available === true &&
+    probeResult.attempted === true &&
+    probeResult.result === true &&
+    probeResult.error == null &&
+    vibrateCalls.length === 1 &&
+    JSON.stringify(vibrateCalls[0]) === "[100,50,100]",
+  JSON.stringify({ probeResult, vibrateCalls }),
+);
+
+// F4: unavailable-API path never throws and reports honestly.
+{
+  const savedVibrate = fakeNavigator.vibrate;
+  delete fakeNavigator.vibrate;
+  let noApi = null;
+  let threw = false;
+  try {
+    noApi = diagLib.runDirectVibrationTest();
+  } catch {
+    threw = true;
+  }
+  check(
+    "F4 missing vibrate API reports available:false without throwing",
+    threw === false &&
+      noApi != null &&
+      noApi.available === false &&
+      noApi.attempted === false &&
+      noApi.result == null &&
+      diagLib.hasVibrationApi() === false,
+    JSON.stringify(noApi),
+  );
+  fakeNavigator.vibrate = savedVibrate;
+}
+check(
+  "F5 vibration API is reported available again after restore",
+  diagLib.hasVibrationApi() === true,
+);
+
+// F6: suppression codes distinguish every silent-settings case.
+hs.updateHapticSettings({ enabled: false });
+check(
+  "F6a master off suppresses with code disabled",
+  hs.describeHapticSuppression("tap", undefined) === "disabled" &&
+    hs.formatHapticSkipReason("disabled", "tap") ===
+      "Skipped: haptics disabled",
+);
+hs.resetHapticSettings();
+hs.updateHapticSettings({ intensity: 0 });
+check(
+  "F6b global intensity 0 suppresses with code intensity-zero",
+  hs.describeHapticSuppression("tap", undefined) === "intensity-zero" &&
+    hs.formatHapticSkipReason("intensity-zero", "tap") ===
+      "Skipped: intensity = 0",
+);
+hs.resetHapticSettings();
+hs.updateHapticSettings({ categories: { buttons: 0 } });
+check(
+  "F6c category intensity 0 suppresses with code category-zero",
+  hs.describeHapticSuppression("tap", undefined) === "category-zero" &&
+    hs.formatHapticSkipReason("category-zero", "tap") ===
+      "Skipped: buttons intensity = 0",
+);
+hs.resetHapticSettings();
+check(
+  "F6d defaults allow firing (no suppression)",
+  hs.describeHapticSuppression("tap", undefined) == null,
+);
+
+// F7: the pure predictor matches the REAL web-haptics conversion for every
+// semantic action at 100% and 50% global intensity, plus a bare pattern
+// (fallback-intensity parity). Drift (e.g. a library upgrade changing the
+// PWM math) fails here — not on the phone.
+{
+  const wh2 = new WebHaptics();
+  let predictorOk = true;
+  const predictorMismatches = [];
+  async function expectPrediction(label, vibrations) {
+    vibrateCalls.length = 0;
+    if (vibrations) await wh2.trigger(vibrations);
+    const predicted = diagLib.predictVibratePattern(vibrations);
+    const actual = vibrateCalls[0];
+    if (JSON.stringify(predicted) !== JSON.stringify(actual)) {
+      predictorOk = false;
+      predictorMismatches.push(
+        `${label}: predicted=${JSON.stringify(predicted)} actual=${JSON.stringify(actual)}`,
+      );
+    }
+  }
+  for (const action of ACTIONS) {
+    await expectPrediction(`${action}@100%`, scalePattern(action, undefined));
+  }
+  hs.updateHapticSettings({ intensity: 0.5 });
+  for (const action of ACTIONS) {
+    await expectPrediction(`${action}@50%`, scalePattern(action, undefined));
+  }
+  hs.resetHapticSettings();
+  await expectPrediction("bare-duration", [{ duration: 30 }]);
+  wh2.destroy();
+  check(
+    "F7 predictor matches web-haptics vibrate() output (100%/50%/fallback)",
+    predictorOk,
+    predictorMismatches.join(" | "),
+  );
+}
+
+// F8: structural rules — probe stays central and synchronous, UI only calls
+// the hook, diagnostics carry the Phase A skip vocabulary.
+{
+  const hookCodeF8 = stripComments(hookSrc);
+  check(
+    "F8a hook exposes a synchronous central probe (no direct vibrate call)",
+    hookSrc.includes("runHapticProbe") &&
+      hookSrc.includes("runDirectVibrationTest") &&
+      !hookCodeF8.includes("navigator.vibrate("),
+  );
+  check(
+    "F8b hook diagnostics carry skipReason + Phase A vocabulary",
+    hookSrc.includes("skipReason") &&
+      hookSrc.includes("describeHapticSuppression") &&
+      hookSrc.includes("Skipped: reduced motion") &&
+      hookSrc.includes("iOS native-switch path"),
+  );
+  const settingsCode = stripComments(settingsSrc);
+  check(
+    "F8c settings test path goes through the hook probe only",
+    settingsSrc.includes("handleTestHaptic") &&
+      settingsSrc.includes("handleTestSemanticTap") &&
+      settingsSrc.includes("runHapticProbe") &&
+      !settingsCode.includes("navigator.vibrate("),
+  );
+  const hapticSettingsSrc = srcFile("lib/haptic-settings.js");
+  check(
+    "F8d settings module exposes suppression codes + skip reasons",
+    hapticSettingsSrc.includes("describeHapticSuppression") &&
+      hapticSettingsSrc.includes("Skipped: haptics disabled") &&
+      hapticSettingsSrc.includes("Skipped: intensity = 0") &&
+      hapticSettingsSrc.includes("intensity = 0"),
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -200,6 +200,38 @@ export function getHapticSettings() {
   return cache
 }
 
+/**
+ * Machine-readable reason a semantic action would stay silent, or null when
+ * it is allowed to fire. Pure function of the store + per-call options.
+ * Codes: "disabled" | "unknown-action" | "intensity-zero" | "category-zero"
+ * | "silent" (defensive fallback — unreachable with sanitized settings).
+ */
+export function describeHapticSuppression(action, options) {
+  const settings = getHapticSettings()
+  if (!settings.enabled) return "disabled"
+  const category = HAPTIC_ACTION_CATEGORY[action]
+  if (!category) return "unknown-action"
+  if (!(settings.intensity > 0)) return "intensity-zero"
+  if (!((settings.categories?.[category] ?? 1) > 0)) return "category-zero"
+  if (computeHapticScale(action, options) == null) return "silent"
+  return null
+}
+
+/**
+ * Human-readable skip reason for diagnostics UI. Mirrors the Phase A
+ * vocabulary ("Skipped: …") so on-device reports are unambiguous.
+ */
+export function formatHapticSkipReason(code, action) {
+  if (code === "disabled") return "Skipped: haptics disabled"
+  if (code === "unknown-action") return "Skipped: unknown action"
+  if (code === "intensity-zero") return "Skipped: intensity = 0"
+  if (code === "category-zero") {
+    const category = HAPTIC_ACTION_CATEGORY[action] ?? "category"
+    return `Skipped: ${category} intensity = 0`
+  }
+  return "Skipped: silent (settings)"
+}
+
 /** Monotonic counter for useSyncExternalStore subscriptions. */
 export function getHapticSettingsVersion() {
   return version

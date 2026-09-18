@@ -2,8 +2,14 @@ import { useCallback, useMemo } from "react"
 import { useWebHaptics } from "web-haptics/react"
 import { isIosTouchDevice } from "@/lib/is-ios"
 import {
+  ANDROID_DIAGNOSTIC_PATTERN,
+  runDirectVibrationTest,
+} from "@/lib/android-haptic-diagnostic"
+import {
   HAPTIC_ACTION_CATEGORY,
   computeHapticScale,
+  describeHapticSuppression,
+  formatHapticSkipReason,
   getHapticSettings,
 } from "@/lib/haptic-settings"
 
@@ -233,6 +239,10 @@ function fireAction(trigger, iosDirect, action, options) {
  *   whether the motor moves then depends on the browser/library stage
  *   (user activation, `navigator.vibrate` policy), which this layer does
  *   not control and does not claim.
+ * - `skipReason` is the human-readable Phase A status line for the same
+ *   decision (`null` while firing is not a state — when the action fires,
+ *   `skipReason` is null and the UI renders "Triggered: …" from
+ *   `triggerCalled` instead).
  * - On iOS, `triggerCalled` is always false by design: gesture haptics
  *   come from the direct-touch native switch (`IosHapticSwitch`), never
  *   from programmatic triggers.
@@ -256,10 +266,19 @@ export function getHapticDiagnostics(action = "tap", options) {
     }
     const scale = computeHapticScale(action, options)
     const pattern = scalePatternForSettings(action, options)
+    const suppression = describeHapticSuppression(action, options)
     let skipped = null
-    if (iosTouch) skipped = "ios-direct"
-    else if (reducedMotion) skipped = "reduced-motion"
-    else if (pattern == null) skipped = "settings-silent"
+    let skipReason = null
+    if (iosTouch) {
+      skipped = "ios-direct"
+      skipReason = "iOS native-switch path"
+    } else if (reducedMotion) {
+      skipped = "reduced-motion"
+      skipReason = "Skipped: reduced motion"
+    } else if (pattern == null) {
+      skipped = "settings-silent"
+      skipReason = formatHapticSkipReason(suppression, action)
+    }
     return {
       action,
       category,
@@ -278,6 +297,7 @@ export function getHapticDiagnostics(action = "tap", options) {
       scale,
       pattern,
       skipped,
+      skipReason,
       triggerCalled: skipped == null,
     }
   } catch {
@@ -294,6 +314,7 @@ export function getHapticDiagnostics(action = "tap", options) {
       scale: null,
       pattern: null,
       skipped: "diagnostic-error",
+      skipReason: "Skipped: diagnostic error",
       triggerCalled: false,
     }
   }
@@ -357,6 +378,79 @@ export function useMetriviaHaptics() {
     [trigger, iosDirect],
   )
 
+  /**
+   * Phase A hardware-path probe (Settings → Test haptic).
+   *
+   * Synchronously fires the unmistakable direct pattern ([100, 50, 100])
+   * through the central layer, bypassing web-haptics' PWM conversion, so a
+   * physical test distinguishes "browser/device rejects vibration" from
+   * "semantic patterns are too subtle to feel".
+   *
+   * MUST stay synchronous: call it directly from the click handler (no
+   * await/setTimeout before it) so `navigator.vibrate` runs inside the user
+   * gesture. Never throws; returns a plain record for the Settings readout:
+   *   { decision, skipReason, vibrate, diagnostics }
+   * - `vibrate.result === true` means the browser ACCEPTED the call, never
+   *   that the motor moved — physical confirmation needs a human.
+   * - Intensity sliders do not scale the probe (hardware probe, not a
+   *   semantic action); master toggle, reduced motion, and iOS silence do.
+   */
+  const runHapticProbe = useCallback(() => {
+    const diagnostics = getHapticDiagnostics("tap", undefined)
+    if (iosDirect) {
+      return {
+        decision: "skipped",
+        skipReason: "iOS native-switch path",
+        vibrate: {
+          available: diagnostics.platform.hasNavigatorVibrate,
+          attempted: false,
+          pattern: null,
+          result: null,
+          error: null,
+        },
+        diagnostics,
+      }
+    }
+    if (diagnostics.accessibility.prefersReducedMotion) {
+      return {
+        decision: "skipped",
+        skipReason: "Skipped: reduced motion",
+        vibrate: {
+          available: diagnostics.platform.hasNavigatorVibrate,
+          attempted: false,
+          pattern: null,
+          result: null,
+          error: null,
+        },
+        diagnostics,
+      }
+    }
+    const suppression = describeHapticSuppression("tap", undefined)
+    if (suppression != null) {
+      return {
+        decision: "skipped",
+        skipReason: formatHapticSkipReason(suppression, "tap"),
+        vibrate: {
+          available: diagnostics.platform.hasNavigatorVibrate,
+          attempted: false,
+          pattern: null,
+          result: null,
+          error: null,
+        },
+        diagnostics,
+      }
+    }
+    const vibrate = runDirectVibrationTest(ANDROID_DIAGNOSTIC_PATTERN)
+    return {
+      decision: vibrate.attempted ? "triggered" : "skipped",
+      skipReason: vibrate.attempted
+        ? null
+        : "Vibration API unavailable in this browser.",
+      vibrate,
+      diagnostics,
+    }
+  }, [iosDirect])
+
   return useMemo(
     () => ({
       tap,
@@ -366,8 +460,19 @@ export function useMetriviaHaptics() {
       success,
       error,
       warning,
+      runHapticProbe,
       isSupported,
     }),
-    [tap, select, chartSelect, dataPoint, success, error, warning, isSupported],
+    [
+      tap,
+      select,
+      chartSelect,
+      dataPoint,
+      success,
+      error,
+      warning,
+      runHapticProbe,
+      isSupported,
+    ],
   )
 }

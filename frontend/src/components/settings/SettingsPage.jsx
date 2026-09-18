@@ -12,8 +12,16 @@ import { isIosTouchDevice } from "@/lib/is-ios"
 import { THEMES } from "@/lib/themes"
 import { APPEARANCES } from "@/lib/themes/theme-utils"
 import { HAPTIC_CATEGORIES } from "@/lib/haptic-settings"
+import {
+  ANDROID_DIAGNOSTIC_PATTERN,
+  describeDevice,
+  predictVibratePattern,
+} from "@/lib/android-haptic-diagnostic"
 import { useAppSettings } from "@/hooks/useAppSettings"
-import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
+import {
+  getHapticDiagnostics,
+  useMetriviaHaptics,
+} from "@/hooks/useMetriviaHaptics"
 import { Button } from "@/components/ui/button"
 import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 import {
@@ -26,6 +34,132 @@ import {
 import { ThemeCard } from "@/components/settings/ThemeCard"
 import { HapticSlider } from "@/components/settings/HapticSlider"
 import { version as appVersion } from "../../../package.json"
+
+/**
+ * Readout for the Phase A hardware diagnostic. Local-only, dev-safe: shows
+ * what the last probe press observed (API availability, call result, skip
+ * reason) without ever claiming physical vibration from JavaScript.
+ */
+function HapticProbeReadout({ report, isIos }) {
+  if (!report) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Press Test haptic to run the probe. Nothing is sent anywhere — the
+        result appears here.
+      </p>
+    )
+  }
+  const { device, decision, skipReason, vibrate, diagnostics } = report
+  const platformLabel = isIos
+    ? "iOS"
+    : device.looksAndroid
+      ? "Android"
+      : "Desktop / other"
+  const touchLabel =
+    device.touchPoints == null
+      ? "unknown"
+      : device.touchPoints > 0
+        ? `yes (${device.touchPoints} touch points)`
+        : "no"
+  const attempted = vibrate?.attempted === true
+  const resultLabel = !attempted
+    ? "— (not attempted)"
+    : vibrate.error != null
+      ? `threw: ${vibrate.error}`
+      : `${String(vibrate.result)}${vibrate.result === true ? " (call accepted — not physical proof)" : " (browser rejected the call)"}`
+  const patternLabel =
+    report.kind === "probe"
+      ? `[${ANDROID_DIAGNOSTIC_PATTERN.join(", ")}]`
+      : diagnostics.pattern != null
+        ? JSON.stringify(diagnostics.pattern)
+        : "— (suppressed)"
+  const statusLine =
+    decision === "triggered"
+      ? report.kind === "probe"
+        ? "Triggered: Android navigator.vibrate"
+        : "Triggered: semantic tap via web-haptics"
+      : (skipReason ?? "Skipped")
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-muted/40 p-3">
+      <p
+        className={cn(
+          "text-sm font-semibold",
+          decision === "triggered" ? "text-foreground" : "text-amber-600",
+        )}
+      >
+        {statusLine}
+      </p>
+      <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Platform</dt>
+        <dd className="min-w-0 break-words text-foreground">
+          {platformLabel} (user-agent heuristic)
+        </dd>
+        <dt className="text-muted-foreground">Touch device</dt>
+        <dd className="text-foreground">{touchLabel}</dd>
+        <dt className="text-muted-foreground">navigator.vibrate exists</dt>
+        <dd className="text-foreground">
+          {device.hasVibrate ? "yes" : "no"}
+        </dd>
+        <dt className="text-muted-foreground">navigator.vibrate result</dt>
+        <dd className="min-w-0 break-words font-mono text-foreground">
+          {resultLabel}
+        </dd>
+        <dt className="text-muted-foreground">Reduced motion</dt>
+        <dd className="text-foreground">
+          {diagnostics.accessibility.prefersReducedMotion ? "on" : "off"}
+        </dd>
+        <dt className="text-muted-foreground">Haptics enabled</dt>
+        <dd className="text-foreground">
+          {diagnostics.settings.enabled ? "on" : "off"}
+        </dd>
+        <dt className="text-muted-foreground">Global intensity</dt>
+        <dd className="text-foreground">
+          {Math.round(diagnostics.settings.intensity * 100)}%
+        </dd>
+        <dt className="text-muted-foreground">Buttons intensity</dt>
+        <dd className="text-foreground">
+          {diagnostics.settings.categoryLevel == null
+            ? "—"
+            : `${Math.round(diagnostics.settings.categoryLevel * 100)}%`}
+        </dd>
+        <dt className="text-muted-foreground">Effective intensity</dt>
+        <dd className="text-foreground">
+          {diagnostics.scale == null
+            ? "— (silent)"
+            : `${Math.round(diagnostics.scale * 100)}%`}
+        </dd>
+        <dt className="text-muted-foreground">Selected pattern</dt>
+        <dd className="min-w-0 break-words font-mono text-foreground">
+          {patternLabel}
+        </dd>
+        {report.kind === "semantic" && report.expectedVibrate != null && (
+          <>
+            <dt className="text-muted-foreground">Expected vibrate()</dt>
+            <dd className="min-w-0 break-words font-mono text-foreground">
+              [{report.expectedVibrate.join(", ")}] (computed — no second call
+              was made)
+            </dd>
+          </>
+        )}
+        <dt className="text-muted-foreground">Trigger attempted</dt>
+        <dd className="text-foreground">
+          {report.kind === "probe"
+            ? attempted
+              ? "yes (direct probe)"
+              : "no"
+            : report.firedSemantic
+              ? "yes (semantic tap)"
+              : "no"}
+        </dd>
+      </dl>
+      <p className="text-xs text-muted-foreground">
+        {device.hasVibrate
+          ? "Browser vibration API is available, but physical vibration cannot be verified from JavaScript — only you holding the phone can confirm it."
+          : "Vibration API unavailable in this browser."}
+      </p>
+    </div>
+  )
+}
 
 const APPEARANCE_OPTIONS = [
   { id: APPEARANCES.LIGHT, label: "Light", icon: Sun },
@@ -51,8 +185,55 @@ export function SettingsPage() {
     setHapticCategory,
     resetSettings,
   } = useAppSettings()
-  const { tap } = useMetriviaHaptics()
+  const { tap, runHapticProbe } = useMetriviaHaptics()
   const [isIos] = useState(() => isIosTouchDevice())
+  // Last diagnostic report (probe or semantic comparison). Local state only —
+  // never sent anywhere.
+  const [probeReport, setProbeReport] = useState(null)
+
+  /**
+   * Phase A hardware probe. MUST stay synchronous (no await/setTimeout):
+   * runHapticProbe() calls navigator.vibrate in this same task so the
+   * browser still sees the real user gesture.
+   */
+  const handleTestHaptic = () => {
+    setProbeReport({
+      kind: "probe",
+      device: describeDevice(),
+      ...runHapticProbe(),
+    })
+  }
+
+  /**
+   * Semantic-path comparison: fires the real tap() through web-haptics (one
+   * vibrate call, same as every production interaction) and records what the
+   * library was expected to hand to navigator.vibrate (computed — a second
+   * call would cancel the buzz).
+   */
+  const handleTestSemanticTap = () => {
+    const diagnostics = getHapticDiagnostics("tap", undefined)
+    const expectedVibrate =
+      diagnostics.pattern != null
+        ? predictVibratePattern(diagnostics.pattern)
+        : null
+    if (diagnostics.triggerCalled) tap()
+    setProbeReport({
+      kind: "semantic",
+      device: describeDevice(),
+      decision: diagnostics.triggerCalled ? "triggered" : "skipped",
+      skipReason: diagnostics.skipReason,
+      vibrate: {
+        available: diagnostics.platform.hasNavigatorVibrate,
+        attempted: false,
+        pattern: null,
+        result: null,
+        error: null,
+      },
+      expectedVibrate,
+      firedSemantic: diagnostics.triggerCalled,
+      diagnostics,
+    })
+  }
 
   const handleSelectTheme = (id) => {
     if (id === themeId) return
@@ -245,20 +426,10 @@ export function SettingsPage() {
               />
 
               <div>
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={!haptics.enabled}
-                  onClick={() => tap()}
-                  className="min-h-11"
-                >
-                  <Vibrate aria-hidden="true" />
-                  Test haptic
-                </Button>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Plays one tap with your current settings.
-                  {isIos &&
-                    " iPhone/iPad has no test tick — tap any button to feel the system tick instead."}
+                <p className="text-xs text-muted-foreground">
+                  Use the hardware diagnostic below to test vibration — it
+                  stays available even with feedback off so suppression stays
+                  visible.
                 </p>
               </div>
 
@@ -292,6 +463,44 @@ export function SettingsPage() {
                     " Scatter drags have no haptic on this device: individual SVG points can’t host the system-tick target without breaking chart gestures."}
                 </p>
               </div>
+            </div>
+
+            {/* Phase A hardware diagnostic. Deliberately OUTSIDE the dimmed
+                intensities block above: the probe must stay pressable while
+                feedback is off / intensity is 0 so the readout can show the
+                skip reason instead of silently doing nothing. */}
+            <div className="flex min-w-0 flex-col gap-3 border-t border-border pt-5">
+              <h3 className="text-sm font-semibold text-foreground">
+                Hardware diagnostic
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Test haptic plays an unmistakable double-buzz hardware probe
+                at full strength (ignores intensity sliders; still respects
+                off and reduced motion). Play semantic tap fires the normal
+                short tap through the regular path for comparison.
+                {isIos &&
+                  " iPhone/iPad has no vibration API — tap any button to feel the system tick instead."}
+              </p>
+              <div className="flex min-w-0 flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={handleTestHaptic}
+                  className="min-h-11"
+                >
+                  <Vibrate aria-hidden="true" />
+                  Test haptic
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={handleTestSemanticTap}
+                  className="min-h-11"
+                >
+                  Play semantic tap
+                </Button>
+              </div>
+              <HapticProbeReadout report={probeReport} isIos={isIos} />
             </div>
           </CardContent>
         </Card>
