@@ -90,6 +90,7 @@ export const THEME_CATALOG = {
   },
   graphite: {
     category: "neutral",
+    featured: true,
     keywords: ["gray", "grey", "workstation", "contrast", "minimal"],
   },
   sage: {

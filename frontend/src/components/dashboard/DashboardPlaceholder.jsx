@@ -6,7 +6,8 @@ import {
   Rows3,
   Table,
 } from "lucide-react"
-import { useMemo } from "react"
+import { memo, useCallback, useMemo, useRef } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { formatCount, formatPercent } from "@/lib/format"
 import {
   applyFilters,
@@ -38,7 +39,19 @@ function formatCell(value) {
   return String(value)
 }
 
-export function DashboardPlaceholder({
+// Fixed row height for the virtualized data viewer. Cells are single-line
+// (whitespace-nowrap, text-sm, py-2) so every row measures the same — the
+// virtualizer needs no per-row measurement pass over potentially hundreds
+// of thousands of rows.
+const PREVIEW_ROW_HEIGHT = 33
+
+/**
+ * Dataset dashboard (KPIs, chart, columns, full data viewer). Memoized so
+ * unrelated Shell renders (e.g. chart-config edits flowing through the
+ * workspace store, header state) never re-render the large table and chart
+ * trees — props are referentially stable unless the workspace data changes.
+ */
+export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   dataset,
   filters,
   onFiltersChange,
@@ -72,6 +85,49 @@ export function DashboardPlaceholder({
       ),
     [columns, dataset],
   )
+  // Filter helpers live above the early return (hooks discipline): they only
+  // run meaningfully once a dataset exists, but their identity must be
+  // stable across renders either way.
+  const filtersActive = isFilterActive(filters)
+  const resetFilters = useCallback(() => {
+    tap()
+    onFiltersChange(defaultFilterState(dataset))
+  }, [dataset, onFiltersChange, tap])
+  // Stable element identity so the memoized ChartBuilder does not see a new
+  // `emptyAction` on every parent render.
+  const emptyAction = useMemo(
+    () =>
+      filtersActive ? (
+        <Button variant="outline" size="sm" onClick={resetFilters}>
+          Clear filters
+        </Button>
+      ) : null,
+    [filtersActive, resetFilters],
+  )
+  // Row windowing lives above the early return too (the virtualizer owns
+  // hooks): with no dataset the count is simply zero. Only rows near the
+  // viewport become DOM nodes (~50 at a time regardless of dataset size),
+  // so a 50 MiB upload cannot create hundreds of thousands of cells.
+  // Top/bottom spacer rows preserve the full scroll height and keep every
+  // column aligned with the sticky header — no absolute positioning, no
+  // per-row measurement, no animation of the table itself.
+  const visibleRows = filteredRows
+  const visibleColumns = columns
+  const scrollRef = useRef(null)
+  const getScrollElement = useCallback(() => scrollRef.current, [])
+  const rowVirtualizer = useVirtualizer({
+    count: visibleRows.length,
+    getScrollElement,
+    estimateSize: () => PREVIEW_ROW_HEIGHT,
+    overscan: 12,
+  })
+  const virtualRows = rowVirtualizer.getVirtualItems()
+  const topSpacer = virtualRows.length > 0 ? virtualRows[0].start : 0
+  const bottomSpacer =
+    visibleRows.length * PREVIEW_ROW_HEIGHT -
+    (virtualRows.length > 0
+      ? virtualRows[virtualRows.length - 1].end
+      : 0)
 
   if (!dataset) {
     const handleUpload = () => {
@@ -111,14 +167,6 @@ export function DashboardPlaceholder({
   const dtypes = dataset.dtypes ?? {}
   const missing = dataset.missing ?? {}
   const unique = dataset.unique ?? {}
-
-  // Global filters: the uploaded dataset stays immutable; everything below
-  // derives from the filtered rows without another backend request.
-  const filtersActive = isFilterActive(filters)
-  const resetFilters = () => {
-    tap()
-    onFiltersChange(defaultFilterState(dataset))
-  }
 
   const rowCount = Number(dataset.row_count) || 0
   const columnCount = Number(dataset.column_count) || columns.length
@@ -173,12 +221,6 @@ export function DashboardPlaceholder({
     },
   ]
 
-  // Every uploaded row and column is rendered (no first-N subset): the
-  // bounded scroll viewport below keeps large datasets usable without
-  // growing the page.
-  const visibleRows = filteredRows
-  const visibleColumns = columns
-
   return (
     <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
       {/* 1. KPI summary row (filters live in the header drawer now) */}
@@ -208,13 +250,7 @@ export function DashboardPlaceholder({
             dataset={filteredDataset}
             config={chartConfig}
             onConfigChange={onChartConfigChange}
-            emptyAction={
-              filtersActive ? (
-                <Button variant="outline" size="sm" onClick={resetFilters}>
-                  Clear filters
-                </Button>
-              ) : null
-            }
+            emptyAction={emptyAction}
           />
         </CardContent>
       </Card>
@@ -292,6 +328,7 @@ export function DashboardPlaceholder({
         </CardHeader>
         <CardContent>
           <div
+            ref={scrollRef}
             role="region"
             aria-label={`Scrollable data table for ${dataset.filename}`}
             tabIndex={0}
@@ -322,21 +359,40 @@ export function DashboardPlaceholder({
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((row, rowIndex) => (
-                  <tr
-                    key={rowIndex}
-                    className="border-b border-border bg-card last:border-0"
-                  >
-                    {visibleColumns.map((col) => (
-                      <td
-                        key={col}
-                        className="px-3 py-2 whitespace-nowrap tabular-nums"
-                      >
-                        {formatCell(row[col])}
-                      </td>
-                    ))}
+                {topSpacer > 0 && (
+                  <tr aria-hidden="true">
+                    <td
+                      colSpan={visibleColumns.length}
+                      style={{ height: topSpacer, padding: 0, border: 0 }}
+                    />
                   </tr>
-                ))}
+                )}
+                {virtualRows.map((virtualRow) => {
+                  const row = visibleRows[virtualRow.index]
+                  return (
+                    <tr
+                      key={virtualRow.key}
+                      className="border-b border-border bg-card"
+                    >
+                      {visibleColumns.map((col) => (
+                        <td
+                          key={col}
+                          className="px-3 py-2 whitespace-nowrap tabular-nums"
+                        >
+                          {formatCell(row[col])}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+                {bottomSpacer > 0 && (
+                  <tr aria-hidden="true">
+                    <td
+                      colSpan={visibleColumns.length}
+                      style={{ height: bottomSpacer, padding: 0, border: 0 }}
+                    />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -350,4 +406,4 @@ export function DashboardPlaceholder({
       </Card>
     </div>
   )
-}
+})

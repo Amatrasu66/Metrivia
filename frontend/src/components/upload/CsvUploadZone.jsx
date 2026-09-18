@@ -1,7 +1,7 @@
 import { FileSpreadsheet, Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { formatCount, formatFileSize } from "@/lib/format"
+import { formatCount, formatFileSize, MAX_CSV_LABEL } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
@@ -92,7 +92,7 @@ export function CsvUploadZone({
             Drag and drop your CSV here
           </p>
           <p className="text-xs text-muted-foreground sm:text-sm">
-            or use the button below · .csv only · up to 10 MB
+            or use the button below · .csv only · up to {MAX_CSV_LABEL}
           </p>
         </div>
 

@@ -1,5 +1,5 @@
 import { FileSpreadsheet, ListFilter, Upload } from "lucide-react"
-import { useMemo, useState } from "react"
+import { memo, useCallback, useMemo, useState } from "react"
 import { formatCount } from "@/lib/format"
 import {
   activeFilterCount,
@@ -12,7 +12,13 @@ import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { DashboardPlaceholder } from "@/components/dashboard/DashboardPlaceholder"
 import { FilterSheet } from "@/components/dashboard/FilterSheet"
 
-export function DashboardLayout({
+/**
+ * Dashboard shell: header actions, filter drawer, and the dataset modules.
+ * Memoized (Phase E) with referentially stable props by contract, so chart
+ * interactions (which update the workspace store and re-render Shell) do
+ * not replay the table/chart trees unless their data actually changed.
+ */
+export const DashboardLayout = memo(function DashboardLayout({
   dataset,
   filters,
   onFiltersChange,
@@ -30,7 +36,10 @@ export function DashboardLayout({
   const fields = useMemo(() => getFilterFields(dataset), [dataset])
   const showFilters = hasDataset && fields.length > 0
   const filterCount = showFilters ? activeFilterCount(filters) : 0
-  const resetFilters = () => onFiltersChange(defaultFilterState(dataset))
+  const resetFilters = useCallback(
+    () => onFiltersChange(defaultFilterState(dataset)),
+    [dataset, onFiltersChange],
+  )
 
   // Opening the drawer is the meaningful gesture: this single tap covers
   // both the Filters button feedback and the drawer-open feedback, so the
@@ -142,4 +151,4 @@ export function DashboardLayout({
       </div>
     </div>
   )
-}
+})

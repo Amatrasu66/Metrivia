@@ -148,19 +148,19 @@ const REQUIRED_TOKENS = [
 }
 
 // --- default + migration ------------------------------------------------------------
-check("T8 Monochrome is the default theme", DEFAULT_THEME_ID === "monochrome");
+check("T8 Graphite is the default theme", DEFAULT_THEME_ID === "graphite");
 check(
   "T9 saved valid theme ids survive (no forced migration to default)",
-  ["mocha-mousse", "lavender", "terminal", "mint"].every(
+  ["mocha-mousse", "monochrome", "lavender", "terminal", "mint"].every(
     (id) => resolveThemeId(id) === id && isValidThemeId(id),
   ),
 );
 check(
-  "T10 unknown/blank saved ids fall back safely to Monochrome",
-  resolveThemeId("nope") === "monochrome" &&
-    resolveThemeId("") === "monochrome" &&
-    resolveThemeId(null) === "monochrome" &&
-    resolveThemeId(undefined) === "monochrome",
+  "T10 unknown/blank saved ids fall back safely to Graphite",
+  resolveThemeId("nope") === "graphite" &&
+    resolveThemeId("") === "graphite" &&
+    resolveThemeId(null) === "graphite" &&
+    resolveThemeId(undefined) === "graphite",
 );
 
 // --- catalog --------------------------------------------------------------------------
@@ -184,10 +184,10 @@ check(
   );
   const featured = getFeaturedThemes();
   check(
-    "T12 featured rail is small and includes Monochrome",
+    "T12 featured rail is small and includes Graphite",
     featured.length >= 1 &&
       featured.length <= 4 &&
-      featured.some((t) => t.id === "monochrome"),
+      featured.some((t) => t.id === "graphite"),
     featured.map((t) => t.id).join(", "),
   );
   const groups = getThemesByCategory();
@@ -237,10 +237,10 @@ check(
       vars["--font-sans"] != null,
   );
   const fallback = buildThemeCssVars("bogus-id", "light");
-  const monoLight = buildThemeCssVars("monochrome", "light");
+  const graphiteLight = buildThemeCssVars("graphite", "light");
   check(
-    "T18 unknown theme ids assemble as Monochrome (safe fallback)",
-    JSON.stringify(fallback) === JSON.stringify(monoLight),
+    "T18 unknown theme ids assemble as Graphite (safe fallback)",
+    JSON.stringify(fallback) === JSON.stringify(graphiteLight),
   );
   check(
     "T19 font fallback keeps bundled fonts local (no external requests)",

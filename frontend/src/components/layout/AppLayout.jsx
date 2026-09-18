@@ -1,5 +1,4 @@
 import { AppHeader } from "@/components/layout/AppHeader"
-import { WorkspaceTabs } from "@/components/workspaces/WorkspaceTabs"
 
 export function AppLayout({
   activeView,
@@ -17,11 +16,12 @@ export function AppLayout({
       >
         Skip to content
       </a>
-      <AppHeader activeView={activeView} onNavigate={onNavigate} />
-      <WorkspaceTabs
-        onCreate={onCreateWorkspace}
-        onSelect={onSelectWorkspace}
-        onClose={onCloseWorkspace}
+      <AppHeader
+        activeView={activeView}
+        onNavigate={onNavigate}
+        onCreateWorkspace={onCreateWorkspace}
+        onSelectWorkspace={onSelectWorkspace}
+        onCloseWorkspace={onCloseWorkspace}
       />
       <main id="main-content" className="w-full max-w-full flex-1">
         {children}

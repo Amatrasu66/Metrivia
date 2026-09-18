@@ -11,17 +11,26 @@ background workers — intentionally minimal for Render's free tier.
 """
 
 import io
+import json
 import os
 
 import pandas as pd
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from analysis import analyze_dataframe
 
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "10"))
-MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
+# Application CSV ceiling: 50 MiB. ONE explicit constant — the route, the
+# manual read cap, and the Flask backstop below all derive from it.
+# NOTE (Render Free honesty): 512 MB RAM / 0.1 CPU means a pathological
+# string-heavy 50 MiB CSV can still exhaust memory during pandas parsing
+# (object-dtype amplification). The pipeline below minimizes duplicate
+# full-dataset copies (single parse, temporaries released, streamed JSON
+# instead of one giant string), but 50 MiB is a tested application limit,
+# not a guarantee for every possible file on the Free instance.
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "5000"))
@@ -78,7 +87,7 @@ class UploadError(Exception):
 
 def create_app(cors_origins=None):
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     CORS(app, resources={r"/api/*": {"origins": _resolve_cors_origins(cors_origins)}})
 
     @app.get("/api/health")
@@ -116,8 +125,8 @@ def create_app(cors_origins=None):
 
         # Read with a hard cap so oversized bodies get a JSON 413 instead
         # of being buffered unbounded. Nothing is written to disk.
-        raw = storage.read(MAX_CONTENT_LENGTH + 1)
-        if len(raw) > MAX_CONTENT_LENGTH:
+        raw = storage.read(MAX_UPLOAD_BYTES + 1)
+        if len(raw) > MAX_UPLOAD_BYTES:
             return _error(
                 f"File exceeds the {MAX_UPLOAD_MB} MB limit. "
                 "Please upload a smaller CSV file.",
@@ -140,12 +149,20 @@ def create_app(cors_origins=None):
                 "Failed to analyze the CSV file due to an unexpected error.",
                 500,
             )
+        finally:
+            # Release the raw body before analysis/serialization: at 50 MiB
+            # it is the largest single object we can drop early.
+            del raw
 
         try:
             result = analyze_dataframe(df, safe_name)
         except Exception:
             return _error("Failed to analyze the CSV file.", 500)
-        return jsonify(result), 200
+        finally:
+            # The records list inside `result` is all the serializer needs;
+            # drop the DataFrame (and its object-dtype columns) first.
+            del df
+        return _stream_json(result), 200
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_too_large(_exc):
@@ -168,6 +185,22 @@ def create_app(cors_origins=None):
 
 def _error(message, status):
     return jsonify({"error": message}), status
+
+
+def _stream_json(payload):
+    """Serialize a large upload payload without building one giant string.
+
+    `jsonify` materializes the entire body in memory on top of the records
+    list; iterencode yields it in chunks so peak memory stays at roughly
+    one dataset representation instead of two. The encoder is created
+    inside the generator so no reference cycle survives the response.
+    """
+
+    def generate():
+        for chunk in json.JSONEncoder().iterencode(payload):
+            yield chunk.encode("utf-8")
+
+    return Response(generate(), content_type="application/json")
 
 
 def _read_csv_bytes(raw):

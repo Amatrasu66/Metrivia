@@ -368,9 +368,9 @@ check(
 const MATRIX = [
   // [surface, file, evidence, android, ios]
   ["nav Upload/Dashboard", "components/layout/AppHeader.jsx", "tap()", "semantic tap", "native Button tick"],
-  ["workspace tab select", "components/workspaces/WorkspaceTabs.jsx", "handleSelect", "semantic select", "native tab tick"],
-  ["workspace tab close", "components/workspaces/WorkspaceTabs.jsx", "handleClose", "semantic tap", "native close tick"],
-  ["workspace new (+)", "components/workspaces/WorkspaceTabs.jsx", "handleCreate", "semantic tap", "native Button tick"],
+  ["workspace select", "components/workspaces/WorkspaceSelector.jsx", "handleSelect", "semantic select", "native row tick"],
+  ["workspace close", "components/workspaces/WorkspaceSelector.jsx", "handleClose", "semantic tap", "native close tick"],
+  ["workspace new (+)", "components/workspaces/WorkspaceSelector.jsx", "handleCreate", "semantic tap", "native Button tick"],
   ["nav Settings (desktop+mobile)", "components/layout/AppHeader.jsx", "handleNavigate", "semantic tap", "native Button tick"],
   ["mobile menu toggle", "components/layout/AppHeader.jsx", "handleMenuToggle", "semantic tap", "native Button tick"],
   ["theme toggle", "components/theme/ThemeToggle.jsx", "tap()", "semantic tap", "native Button tick"],

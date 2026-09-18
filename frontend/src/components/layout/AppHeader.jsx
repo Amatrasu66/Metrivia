@@ -1,10 +1,11 @@
 import { BarChart3, Menu, Settings, X } from "lucide-react"
+import { motion } from "motion/react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
+import { WorkspaceSelector } from "@/components/workspaces/WorkspaceSelector"
 
 const NAV_ITEMS = [
   { id: "upload", label: "Upload" },
@@ -34,7 +35,20 @@ export function BrandMark({ compact = false }) {
   )
 }
 
-export function AppHeader({ activeView, onNavigate }) {
+/**
+ * Application header (Phase E): brand, workspace selector, and a compact
+ * segmented Upload/Dashboard menu with a small shared active indicator.
+ * Motion is limited to that indicator (transform-only layout animation on
+ * two buttons); nothing else in the header animates. Reduced motion is
+ * handled globally via MotionConfig (see main.jsx).
+ */
+export function AppHeader({
+  activeView,
+  onNavigate,
+  onCreateWorkspace,
+  onSelectWorkspace,
+  onCloseWorkspace,
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { tap } = useMetriviaHaptics()
 
@@ -51,49 +65,65 @@ export function AppHeader({ activeView, onNavigate }) {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-        <BrandMark />
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
+        <div className="min-w-0 shrink-0">
+          <BrandMark compact />
+        </div>
 
-        <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
-          {NAV_ITEMS.map((item) => (
-            <Button
-              key={item.id}
-              variant={activeView === item.id ? "secondary" : "ghost"}
-              size="sm"
-              aria-current={activeView === item.id ? "page" : undefined}
-              onClick={() => handleNavigate(item.id)}
-            >
-              {item.label}
-            </Button>
-          ))}
-          <Badge variant="outline" className="ml-2 hidden lg:inline-flex">
-            Frontend shell
-          </Badge>
-          <span className="ml-1 flex items-center gap-1">
-            <Button
-              variant={activeView === "settings" ? "secondary" : "ghost"}
-              size="icon"
-              type="button"
-              aria-label="Open settings"
-              aria-current={activeView === "settings" ? "page" : undefined}
-              title="Open settings"
-              onClick={() => handleNavigate("settings")}
-            >
-              <Settings aria-hidden="true" />
-            </Button>
-            <ThemeToggle />
-          </span>
+        <div className="min-w-0 shrink">
+          <WorkspaceSelector
+            onCreate={onCreateWorkspace}
+            onSelect={onSelectWorkspace}
+            onClose={onCloseWorkspace}
+          />
+        </div>
+
+        <nav
+          aria-label="Primary"
+          className="ml-1 hidden items-center gap-0.5 rounded-xl border border-border bg-muted/60 p-1 md:flex"
+        >
+          {NAV_ITEMS.map((item) => {
+            const isActive = activeView === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => handleNavigate(item.id)}
+                className={cn(
+                  "relative rounded-lg px-4 py-1.5 text-sm font-medium transition-colors outline-none",
+                  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-accent-foreground",
+                )}
+              >
+                {isActive && (
+                  <motion.span
+                    layoutId="metrivia-nav-pill"
+                    aria-hidden="true"
+                    transition={{ type: "spring", stiffness: 550, damping: 40 }}
+                    className="absolute inset-0 rounded-lg bg-card shadow-sm ring-1 ring-border"
+                  />
+                )}
+                <span className="relative">{item.label}</span>
+              </button>
+            )
+          })}
         </nav>
 
-        <div className="flex items-center gap-2 md:hidden">
+        <span className="ml-auto flex shrink-0 items-center gap-1">
           <Button
-            variant={activeView === "settings" ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon"
             type="button"
             aria-label="Open settings"
             aria-current={activeView === "settings" ? "page" : undefined}
             title="Open settings"
             onClick={() => handleNavigate("settings")}
+            className={cn(
+              activeView === "settings" && "bg-secondary text-secondary-foreground",
+            )}
           >
             <Settings aria-hidden="true" />
           </Button>
@@ -105,10 +135,11 @@ export function AppHeader({ activeView, onNavigate }) {
             aria-controls="mobile-nav"
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             onClick={handleMenuToggle}
+            className="md:hidden"
           >
             {menuOpen ? <X /> : <Menu />}
           </Button>
-        </div>
+        </span>
       </div>
 
       <div

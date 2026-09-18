@@ -247,10 +247,12 @@
   * {
     @apply border-border outline-ring/50;
   }
-  /* Subtle theme-switch polish: color-only transitions so switching palettes
-     feels instant yet smooth. Guarded by prefers-reduced-motion (immediate
-     changes there) and limited to paint-only properties — never layout,
-     never chart geometry. */
+  /* Subtle theme-switch polish: paint-only color transitions so switching
+     palettes feels instant yet smooth. Guarded by prefers-reduced-motion
+     (immediate changes there). Deliberately excludes fill/stroke: chart SVG
+     nodes update via attributes every frame during animations, and
+     transitioning them forces needless work on large trees. Never layout
+     properties, never chart geometry. */
   @media (prefers-reduced-motion: no-preference) {
     *,
     *::before,
@@ -258,9 +260,7 @@
       transition:
         background-color 180ms ease,
         border-color 180ms ease,
-        color 180ms ease,
-        fill 180ms ease,
-        stroke 180ms ease;
+        color 180ms ease;
     }
   }
   html {

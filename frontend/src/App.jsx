@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { UploadPage } from "@/components/landing/UploadPage"
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout"
@@ -10,7 +10,7 @@ import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
 import { defaultChartConfig } from "@/lib/chart-data"
 import { defaultFilterState } from "@/lib/filter-data"
-import { MAX_CSV_BYTES, isCsvFileName } from "@/lib/format"
+import { validateCsvFile } from "@/lib/format"
 
 // Upload lifecycle. "uploading" covers the fetch to POST /api/upload;
 // "analyzing" is shown only once the request has reached the backend
@@ -21,7 +21,6 @@ const ANALYZING_GRACE_MS = 2500
 const ANALYZING_MIN_VISIBLE_MS = 350
 const WAKE_SUCCESS_MS = 1100
 
-const INVALID_FILE_TITLE = "We could not accept that file"
 const UPLOAD_FAILED_TITLE = "Could not process this file"
 const BACKEND_UNAVAILABLE_TITLE = "Backend unavailable"
 const BACKEND_UNAVAILABLE_MESSAGE =
@@ -177,10 +176,10 @@ function Shell() {
     prevStatusRef.current = status
   }, [status, errorTitle, errorMessage, hapticError])
 
-  const handleNavigate = (nextView) => {
+  const handleNavigate = useCallback((nextView) => {
     setView(nextView)
     window.scrollTo({ top: 0 })
-  }
+  }, [])
 
   const workspaceExists = (id) =>
     workspacesRef.current.some((ws) => ws.id === id)
@@ -227,31 +226,17 @@ function Shell() {
       !signal.aborted &&
       workspaceExists(targetId)
 
-    // Basic client-side checks first — no network needed for these.
-    if (!isCsvFileName(file.name)) {
+    // Reusable pre-upload gate (extension + 50 MiB size from the actual
+    // File) — no network for invalid files. The backend limit stays
+    // authoritative; this only saves a doomed upload.
+    const validation = validateCsvFile(file)
+    if (!validation.ok) {
       updateWorkspace(targetId, {
         file: null,
         fileName: null,
         fileSize: 0,
       })
-      failWith(
-        targetId,
-        `“${file.name}” is not a .csv file. Please choose a file ending in .csv and try again.`,
-        { title: INVALID_FILE_TITLE },
-      )
-      return
-    }
-    if (file.size > MAX_CSV_BYTES) {
-      updateWorkspace(targetId, {
-        file: null,
-        fileName: null,
-        fileSize: 0,
-      })
-      failWith(
-        targetId,
-        `“${file.name}” exceeds the 10 MB limit. Please choose a smaller CSV file.`,
-        { title: INVALID_FILE_TITLE },
-      )
+      failWith(targetId, validation.message, { title: validation.title })
       return
     }
 
@@ -358,14 +343,30 @@ function Shell() {
 
   // "Remove file" clears the ACTIVE workspace back to Untitled (aborting any
   // upload it started). Other workspaces are untouched.
-  const resetUpload = () => {
+  const resetUpload = useCallback(() => {
     flowRef.current += 1
     abortRef.current?.abort()
     abortRef.current = null
     resetWorkspace(activeId)
-  }
+  }, [activeId, resetWorkspace])
 
-  const handleContinue = () => setView("dashboard")
+  const handleContinue = useCallback(() => setView("dashboard"), [])
+
+  // Stable workspace-data writers so the memoized dashboard subtree keeps
+  // referential props (chart/filter edits must not replay table/chart trees
+  // through parent re-renders — only changed data re-renders).
+  const handleFiltersChange = useCallback(
+    (next) => updateWorkspace(activeId, { filters: next }),
+    [activeId, updateWorkspace],
+  )
+  const handleChartConfigChange = useCallback(
+    (next) => updateWorkspace(activeId, { chartConfig: next }),
+    [activeId, updateWorkspace],
+  )
+  const handleBackToUpload = useCallback(
+    () => handleNavigate("upload"),
+    [handleNavigate],
+  )
 
   // Workspace tab actions (the tab bar itself owns haptics + a11y).
   const handleCreateWorkspace = () => {
@@ -423,14 +424,10 @@ function Shell() {
         <DashboardLayout
           dataset={dataset}
           filters={filters}
-          onFiltersChange={(next) =>
-            updateWorkspace(activeId, { filters: next })
-          }
+          onFiltersChange={handleFiltersChange}
           chartConfig={chartConfig}
-          onChartConfigChange={(next) =>
-            updateWorkspace(activeId, { chartConfig: next })
-          }
-          onBackToUpload={() => handleNavigate("upload")}
+          onChartConfigChange={handleChartConfigChange}
+          onBackToUpload={handleBackToUpload}
           onRemoveFile={resetUpload}
         />
       )}

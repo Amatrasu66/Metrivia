@@ -55,7 +55,7 @@ curl.exe -F "file=@sample.csv;type=text/csv" http://127.0.0.1:5000/api/upload
 | `HOST`           | `0.0.0.0`               | Bind address (Render-compatible)         |
 | `PORT`           | `5000`                  | Port (Render injects `PORT`)             |
 | `CORS_ORIGINS`   | local dev allowlist (see below) | Comma-separated allowed origins          |
-| `MAX_UPLOAD_MB`  | `10`                    | Max CSV size; larger requests get a JSON 413 |
+| `MAX_UPLOAD_MB`  | `50`                    | Max CSV size; larger requests get a JSON 413 |
 | `FLASK_DEBUG`    | (off)                   | Set to `1` for debug mode in development |
 
 ## CORS origins
@@ -85,9 +85,22 @@ dropped. Run the CORS regression tests with:
 ## Limits and error handling
 
 - Only `.csv` files are accepted; other types get a JSON 400.
-- Oversized uploads get a JSON 413.
+- Oversized uploads get a JSON 413 (limit: 50 MiB request body).
 - Empty, header-only, malformed, or undecodable files get a JSON 400 with a
   plain-language message. Nothing is stored server-side.
+- The upload response streams its JSON body (`iterencode`, 64 KiB chunks)
+  so a large dataset does not sit in memory twice (records list + one
+  giant string). Raw bytes and the DataFrame are released as soon as the
+  records list exists.
+
+## Render Free memory note
+
+50 MiB is a tested application limit, not a guarantee for every file on a
+512 MB / 0.1 CPU Free instance: Pandas object-dtype amplification means a
+string-heavy max-size CSV can still exhaust memory while parsing. Numeric
+or modest files process comfortably; pathological files may fail despite
+the limit. No database, session store, or chunk endpoint was added — the
+backend stays stateless by design.
 
 ## Deploy notes (Render free tier)
 

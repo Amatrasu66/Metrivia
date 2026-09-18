@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { EmptyState } from "@/components/states/EmptyState"
 import {
@@ -44,8 +44,12 @@ const VIEW_BY_TYPE = {
  * view navigation. The parent then owns resets (fresh defaults on upload);
  * the filename reset effect below only runs in uncontrolled mode. When the
  * props are absent the builder keeps its original local state untouched.
+ *
+ * Memoized (Phase E): the builder sits inside the dashboard tree, so parent
+ * renders for unrelated reasons (table scroll state, header) must not
+ * replay chart animations. Props are referentially stable by contract.
  */
-export function ChartBuilder({
+export const ChartBuilder = memo(function ChartBuilder({
   dataset,
   emptyAction = null,
   config: controlledConfig,
@@ -204,4 +208,4 @@ export function ChartBuilder({
       </div>
     </div>
   )
-}
+})
