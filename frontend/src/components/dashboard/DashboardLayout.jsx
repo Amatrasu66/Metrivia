@@ -43,6 +43,15 @@ export function DashboardLayout({
     onBackToUpload()
   }
 
+  // "Remove file" previously bypassed the semantic haptic layer entirely
+  // (raw onRemoveFile prop): silent on Android. iOS already ticked via the
+  // shared Button's native switch; this tap() makes Android match without
+  // changing the removal behavior.
+  const handleRemoveFile = () => {
+    tap()
+    onRemoveFile()
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -91,7 +100,7 @@ export function DashboardLayout({
               </Button>
             ) : null}
             {hasDataset ? (
-              <Button variant="outline" size="sm" onClick={onRemoveFile}>
+              <Button variant="outline" size="sm" onClick={handleRemoveFile}>
                 Remove file
               </Button>
             ) : null}

@@ -15,6 +15,7 @@ import { HAPTIC_CATEGORIES } from "@/lib/haptic-settings"
 import { useAppSettings } from "@/hooks/useAppSettings"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { Button } from "@/components/ui/button"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 import {
   Card,
   CardContent,
@@ -141,7 +142,7 @@ export function SettingsPage() {
                       aria-pressed={selected}
                       onClick={() => handleAppearance(option.id)}
                       className={cn(
-                        "flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors outline-none",
+                        "relative flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors outline-none",
                         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                         selected
                           ? "bg-card text-foreground shadow-sm ring-1 ring-border"
@@ -150,6 +151,15 @@ export function SettingsPage() {
                     >
                       <Icon aria-hidden="true" className="size-4" />
                       {option.label}
+                      {/* iOS only: direct-touch native tick for real mode
+                          changes. Only on inactive options so re-tapping
+                          the active mode stays silent. Null on
+                          Android/desktop (which uses tap() above). */}
+                      {selected ? null : (
+                        <IosHapticSwitch
+                          onActivate={() => handleAppearance(option.id)}
+                        />
+                      )}
                     </button>
                   )
                 })}
@@ -173,7 +183,19 @@ export function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-6">
-            <div className="flex items-center justify-between gap-4">
+            {/* Master toggle row. iOS cannot host the native tick *inside*
+                the Base UI switch (nested interactive controls), so the
+                direct-touch switch covers this row instead — only while
+                haptics are enabled (IosHapticSwitch renders null once they
+                are off, when disabling must stay silent). The Base UI
+                switch keeps its semantics for keyboard/AT; the overlay
+                input is aria-hidden and unfocusable. The closure reads the
+                current value — never the switch's change event — so the
+                toggle cannot double-fire or invert the wrong way. */}
+            <div className="relative flex items-center justify-between gap-4">
+              <IosHapticSwitch
+                onActivate={() => handleMasterToggle(!haptics.enabled)}
+              />
               <div className="flex min-w-0 flex-col gap-0.5">
                 <span
                   id="haptics-master-label"

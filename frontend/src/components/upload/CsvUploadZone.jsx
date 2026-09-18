@@ -31,6 +31,15 @@ export function CsvUploadZone({
     inputRef.current?.click()
   }
 
+  // Removing the selected file is a discrete destructive gesture: it needs
+  // the same semantic tap as every other button (previously it reached the
+  // central haptic method on no platform — the shared Button only carries
+  // the iOS native switch, so Android was silent here).
+  const handleRemove = () => {
+    tap()
+    onRemove()
+  }
+
   const handleContinue = () => {
     tap()
     onContinue()
@@ -175,7 +184,7 @@ export function CsvUploadZone({
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={onRemove}>
+              <Button variant="outline" size="sm" onClick={handleRemove}>
                 <X aria-hidden="true" />
                 Remove
               </Button>

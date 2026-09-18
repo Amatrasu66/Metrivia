@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 
 /**
  * Right-side Sheet built on Base UI Dialog (the same primitive shadcn's
@@ -117,18 +118,23 @@ export function SheetFooter({ className, ...props }) {
   )
 }
 
-export function SheetClose({ className, ...props }) {
+export function SheetClose({ className, onClick, ...props }) {
   return (
     <Dialog.Close
       data-slot="sheet-close"
       aria-label="Close"
+      onClick={onClick}
       className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...props}
     >
       <X aria-hidden="true" className="size-4" />
+      {/* iOS only: direct-touch native tick, same pattern as the shared
+          Button. Null on Android/desktop (the onClick handler above fires
+          the semantic tap there). */}
+      <IosHapticSwitch onActivate={onClick} />
     </Dialog.Close>
   )
 }

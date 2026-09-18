@@ -1,10 +1,18 @@
 import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { IosHapticSwitch } from "@/components/haptics/IosHapticSwitch"
 import { ThemePreview } from "@/components/settings/ThemePreview"
 
 /**
  * Selectable theme card. A real <button> (keyboard accessible by default);
  * the selected card exposes aria-pressed + a visible check badge.
+ *
+ * Haptics: Android fires through `onSelect` (the Settings handler calls
+ * the semantic `tap()`). On iOS the programmatic path is silent by design,
+ * so a direct-touch native switch covers this card's exact bounds — but
+ * only while the theme is NOT active: re-tapping the selected card stays
+ * silent, the action still runs exactly once (the switch stops the bubbled
+ * click), and keyboard/AT users keep the plain button path.
  */
 export function ThemeCard({ theme, selected, onSelect }) {
   return (
@@ -14,7 +22,7 @@ export function ThemeCard({ theme, selected, onSelect }) {
       aria-label={`${theme.name} theme${selected ? " (selected)" : ""}`}
       onClick={onSelect}
       className={cn(
-        "group flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-2.5 text-left transition-colors outline-none",
+        "group relative flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-2.5 text-left transition-colors outline-none",
         "hover:border-primary/60 hover:bg-accent/40",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         selected
@@ -46,6 +54,10 @@ export function ThemeCard({ theme, selected, onSelect }) {
           </span>
         </span>
       </span>
+      {/* iOS only: direct-touch native tick for real theme changes.
+          Rendered only on inactive cards so re-selecting the active theme
+          stays silent. Null on Android/desktop. */}
+      {selected ? null : <IosHapticSwitch onActivate={onSelect} />}
     </button>
   )
 }

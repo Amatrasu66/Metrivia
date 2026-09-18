@@ -1,7 +1,11 @@
 import { useCallback, useMemo } from "react"
 import { useWebHaptics } from "web-haptics/react"
 import { isIosTouchDevice } from "@/lib/is-ios"
-import { computeHapticScale } from "@/lib/haptic-settings"
+import {
+  HAPTIC_ACTION_CATEGORY,
+  computeHapticScale,
+  getHapticSettings,
+} from "@/lib/haptic-settings"
 
 /**
  * Metrivia-specific haptic feedback abstraction.
@@ -212,6 +216,87 @@ function fireAction(trigger, iosDirect, action, options) {
   const pattern = scalePatternForSettings(action, options)
   if (!pattern) return
   fireSafely(trigger, pattern)
+}
+
+/**
+ * Development/diagnostic helper (pure, no logging, no side effects).
+ *
+ * Reports every stage of the central haptic path for one semantic action
+ * so an on-device failure can be localized without noisy production logs:
+ *
+ *   platform.isIosTouchDevice → platform.hasNavigatorVibrate →
+ *   platform.webHapticsSupported → accessibility.prefersReducedMotion →
+ *   settings (master / global / category) → scale → pattern →
+ *   triggerCalled (whether fireAction would invoke the library trigger)
+ *
+ * - `triggerCalled: true` means the hook handed a pattern to web-haptics;
+ *   whether the motor moves then depends on the browser/library stage
+ *   (user activation, `navigator.vibrate` policy), which this layer does
+ *   not control and does not claim.
+ * - On iOS, `triggerCalled` is always false by design: gesture haptics
+ *   come from the direct-touch native switch (`IosHapticSwitch`), never
+ *   from programmatic triggers.
+ * - Never throws; never exposes anything beyond local haptic state.
+ */
+export function getHapticDiagnostics(action = "tap", options) {
+  try {
+    const iosTouch = isIosTouchDevice()
+    const hasNavigatorVibrate =
+      typeof navigator !== "undefined" &&
+      typeof navigator.vibrate === "function"
+    const settings = getHapticSettings()
+    const category = HAPTIC_ACTION_CATEGORY[action] ?? null
+    const categoryLevel =
+      category != null ? (settings.categories?.[category] ?? 1) : null
+    let reducedMotion = false
+    try {
+      reducedMotion = prefersReducedMotion()
+    } catch {
+      reducedMotion = false
+    }
+    const scale = computeHapticScale(action, options)
+    const pattern = scalePatternForSettings(action, options)
+    let skipped = null
+    if (iosTouch) skipped = "ios-direct"
+    else if (reducedMotion) skipped = "reduced-motion"
+    else if (pattern == null) skipped = "settings-silent"
+    return {
+      action,
+      category,
+      platform: {
+        isIosTouchDevice: iosTouch,
+        hasNavigatorVibrate,
+        // Same definition as web-haptics' static `isSupported`.
+        webHapticsSupported: hasNavigatorVibrate,
+      },
+      accessibility: { prefersReducedMotion: reducedMotion },
+      settings: {
+        enabled: settings.enabled,
+        intensity: settings.intensity,
+        categoryLevel,
+      },
+      scale,
+      pattern,
+      skipped,
+      triggerCalled: skipped == null,
+    }
+  } catch {
+    return {
+      action,
+      category: null,
+      platform: {
+        isIosTouchDevice: false,
+        hasNavigatorVibrate: false,
+        webHapticsSupported: false,
+      },
+      accessibility: { prefersReducedMotion: false },
+      settings: { enabled: false, intensity: 0, categoryLevel: null },
+      scale: null,
+      pattern: null,
+      skipped: "diagnostic-error",
+      triggerCalled: false,
+    }
+  }
 }
 
 export function useMetriviaHaptics() {
