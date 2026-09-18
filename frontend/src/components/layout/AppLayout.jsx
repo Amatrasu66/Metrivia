@@ -1,4 +1,3 @@
-import { AppFooter } from "@/components/layout/AppFooter"
 import { AppHeader } from "@/components/layout/AppHeader"
 
 export function AppLayout({ activeView, onNavigate, children }) {
@@ -14,7 +13,6 @@ export function AppLayout({ activeView, onNavigate, children }) {
       <main id="main-content" className="w-full max-w-full flex-1">
         {children}
       </main>
-      <AppFooter />
     </div>
   )
 }

@@ -221,7 +221,7 @@ export async function checkHealth({ baseUrl, signal } = {}) {
 /**
  * POST /api/upload — sends a CSV file (multipart field "file") and resolves
  * with the backend's dataset analysis (filename, row/column counts, columns,
- * dtypes, missing/unique counts, numeric stats, preview rows).
+ * dtypes, missing/unique counts, numeric stats, all rows).
  *
  * Throws ApiError with the backend's message on 4xx/5xx, or an ApiError with
  * `isNetworkError: true` when the server cannot be reached. Re-throws

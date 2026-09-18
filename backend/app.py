@@ -4,7 +4,7 @@ Endpoints:
     GET  /api/health   Service health check.
     POST /api/upload   Accept a CSV file (multipart/form-data), analyze it
                        with pandas entirely in memory, and return dataset
-                       statistics plus a preview of the first 100 rows.
+                       statistics plus the full row data.
 
 Uploaded files are never written to disk. No database, no auth, no
 background workers — intentionally minimal for Render's free tier.

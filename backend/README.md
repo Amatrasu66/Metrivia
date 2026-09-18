@@ -8,7 +8,7 @@ workers — intentionally minimal for Render's free tier.
 - `GET /api/health` — confirms the backend is running.
 - `POST /api/upload` — accepts a CSV file as `multipart/form-data` field
   `file`, analyzes it in memory with Pandas, and returns dataset statistics
-  plus a preview of the first 100 rows. Files are never written to disk.
+  plus the full row data (every row, every column). Files are never written to disk.
 
 Upload response includes: `filename`, `row_count`, `column_count`,
 `columns`, `dtypes` (numeric / categorical / datetime / boolean / text),

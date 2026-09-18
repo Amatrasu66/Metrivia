@@ -8,8 +8,6 @@ import math
 
 import pandas as pd
 
-PREVIEW_ROWS = 100
-
 # Heuristics for the categorical-vs-text split. A column is categorical when
 # its cardinality is low in absolute terms or relative to the row count
 # (e.g. status codes, groups). High-cardinality free text such as names,
@@ -148,7 +146,11 @@ def analyze_dataframe(df, filename):
         if kind == "numeric":
             numeric_stats[name] = numeric_summary(series)
 
-    preview_records = df.head(PREVIEW_ROWS).to_dict(orient="records")
+    # The full row set is returned (all rows, all columns): the frontend
+    # data viewer exposes every row/column with bounded scrolling instead of
+    # a fixed first-N subset. Upload size is capped at 10 MB by app.py, which
+    # bounds the worst-case payload.
+    preview_records = df.to_dict(orient="records")
     preview = [
         {str(k): to_jsonable(v) for k, v in row.items()}
         for row in preview_records

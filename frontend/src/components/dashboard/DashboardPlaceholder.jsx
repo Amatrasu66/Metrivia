@@ -29,10 +29,9 @@ import { ChartBuilder } from "@/components/charts/ChartBuilder"
 import { KpiCard } from "@/components/dashboard/KpiCard"
 import { NumericSummary } from "@/components/dashboard/NumericSummary"
 
-// Keep wide datasets usable on small screens: the table scrolls inside its
-// card, so the page itself never overflows horizontally.
-const MAX_PREVIEW_COLUMNS = 12
-const MAX_PREVIEW_ROWS = 8
+// The data viewer below renders every row and column inside a bounded
+// scroll container (vertical + horizontal), so wide datasets stay usable on
+// small screens and the page itself never overflows horizontally.
 
 function formatCell(value) {
   if (value === null || value === undefined || value === "") return "—"
@@ -172,9 +171,11 @@ export function DashboardPlaceholder({
     },
   ]
 
-  const shownColumns = columns.slice(0, MAX_PREVIEW_COLUMNS)
-  const hiddenColumnCount = Math.max(0, columns.length - shownColumns.length)
-  const shownRows = filteredRows.slice(0, MAX_PREVIEW_ROWS)
+  // Every uploaded row and column is rendered (no first-N subset): the
+  // bounded scroll viewport below keeps large datasets usable without
+  // growing the page.
+  const visibleRows = filteredRows
+  const visibleColumns = columns
 
   return (
     <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
@@ -274,28 +275,36 @@ export function DashboardPlaceholder({
         <NumericSummary rows={filteredRows} numericColumns={numericColumns} />
       </div>
 
-      {/* 4. Data preview */}
+      {/* 4. Data preview — every row and column of the current view */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Data preview</CardTitle>
           <CardDescription>
-            First rows of {dataset.filename} (up to {MAX_PREVIEW_ROWS}{" "}
-            shown).
+            {formatCount(visibleRows.length)} of {formatCount(rowCount)} rows
+            {" · "}
+            {formatCount(visibleColumns.length)} of {formatCount(columnCount)}{" "}
+            columns{filtersActive ? " · filtered" : ""} — {dataset.filename}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="min-w-0 overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-0 border-collapse text-left text-sm">
+          <div
+            role="region"
+            aria-label={`Scrollable data table for ${dataset.filename}`}
+            tabIndex={0}
+            className="max-h-[32rem] min-w-0 overflow-auto rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <table className="w-full min-w-max border-collapse text-left text-sm">
               <caption className="sr-only">
-                Preview of the first rows of {dataset.filename}
+                All rows and columns of {dataset.filename}
+                {filtersActive ? " matching the active filters" : ""}
               </caption>
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  {shownColumns.map((col) => (
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-border bg-muted">
+                  {visibleColumns.map((col) => (
                     <th
                       key={col}
                       scope="col"
-                      className="max-w-40 truncate px-3 py-2 text-xs font-medium text-muted-foreground"
+                      className="bg-muted px-3 py-2 text-xs font-medium whitespace-nowrap text-muted-foreground"
                     >
                       <span className="flex items-center gap-1.5">
                         <Table
@@ -309,15 +318,15 @@ export function DashboardPlaceholder({
                 </tr>
               </thead>
               <tbody>
-                {shownRows.map((row, rowIndex) => (
+                {visibleRows.map((row, rowIndex) => (
                   <tr
                     key={rowIndex}
-                    className="border-b border-border last:border-0"
+                    className="border-b border-border bg-card last:border-0"
                   >
-                    {shownColumns.map((col) => (
+                    {visibleColumns.map((col) => (
                       <td
                         key={col}
-                        className="max-w-40 truncate px-3 py-2 tabular-nums"
+                        className="px-3 py-2 whitespace-nowrap tabular-nums"
                       >
                         {formatCell(row[col])}
                       </td>
@@ -328,12 +337,10 @@ export function DashboardPlaceholder({
             </table>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Showing {shownRows.length} of {formatCount(filteredRows.length)}
-            {filtersActive ? " filtered" : ""} rows
-            {hiddenColumnCount > 0
-              ? ` · ${hiddenColumnCount} more column${hiddenColumnCount === 1 ? "" : "s"} not shown`
-              : ""}
-            .
+            Showing all {formatCount(visibleRows.length)}
+            {filtersActive ? " filtered" : ""} rows and all{" "}
+            {formatCount(visibleColumns.length)} columns. Scroll vertically for
+            more rows, horizontally for more columns.
           </p>
         </CardContent>
       </Card>
