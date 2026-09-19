@@ -2,7 +2,7 @@
 //
 // Covers the Phase D theme registry + catalog + helpers (no React, no DOM):
 // source completeness, unique ids/names, required tokens, chart palette,
-// Amber default, saved-preference migration, search, categories, and
+// Mocha Mousse default, saved-preference migration, search, categories, and
 // pure token assembly. theme-utils.js has no top-level DOM access, so node
 // can import it directly (relative paths — no alias hook needed).
 //
@@ -149,7 +149,10 @@ const REQUIRED_TOKENS = [
 }
 
 // --- default + migration ------------------------------------------------------------
-check("T8 Amber is the default theme", DEFAULT_THEME_ID === "amber");
+check(
+  "T8 Mocha Mousse is the default theme",
+  DEFAULT_THEME_ID === "mocha-mousse",
+);
 check(
   "T9 saved valid theme ids survive (no forced migration to default)",
   ["mocha-mousse", "monochrome", "lavender", "terminal", "mint", "graphite"].every(
@@ -157,11 +160,11 @@ check(
   ),
 );
 check(
-  "T10 unknown/blank saved ids fall back safely to Amber",
-  resolveThemeId("nope") === "amber" &&
-    resolveThemeId("") === "amber" &&
-    resolveThemeId(null) === "amber" &&
-    resolveThemeId(undefined) === "amber",
+  "T10 unknown/blank saved ids fall back safely to Mocha Mousse",
+  resolveThemeId("nope") === "mocha-mousse" &&
+    resolveThemeId("") === "mocha-mousse" &&
+    resolveThemeId(null) === "mocha-mousse" &&
+    resolveThemeId(undefined) === "mocha-mousse",
 );
 check(
   "T10b Graphite and Mocha remain selectable (never removed)",
@@ -246,10 +249,10 @@ check(
       vars["--font-sans"] != null,
   );
   const fallback = buildThemeCssVars("bogus-id", "light");
-  const amberLight = buildThemeCssVars("amber", "light");
+  const mochaLight = buildThemeCssVars("mocha-mousse", "light");
   check(
-    "T18 unknown theme ids assemble as Amber (safe fallback)",
-    JSON.stringify(fallback) === JSON.stringify(amberLight),
+    "T18 unknown theme ids assemble as Mocha Mousse (safe fallback)",
+    JSON.stringify(fallback) === JSON.stringify(mochaLight),
   );
   check(
     "T19 font fallback keeps bundled fonts local (no external requests)",
@@ -265,7 +268,7 @@ check(
   );
 }
 
-// --- Phase H bootstrap: Amber first paint ---------------------------------
+// --- Bootstrap: Mocha Mousse first paint ------------------------------------
 {
   const { readFileSync: readSync } = await import("node:fs");
   const { fileURLToPath: toPath } = await import("node:url");
@@ -274,12 +277,13 @@ check(
   const css = readSync(`${root}src/index.css`, "utf8");
   const utilsSrc = readSync(`${root}src/lib/themes/theme-utils.js`, "utf8");
   check(
-    "T21 bootstrap defaults to Amber (graphite + mocha stay selectable, never default)",
+    "T21 bootstrap defaults to Mocha Mousse (graphite + amber stay selectable, never default)",
     html.includes('"amber"') &&
       html.includes('"graphite"') &&
       html.includes('"mocha-mousse"') &&
-      !html.includes('|| "mocha-mousse"') &&
-      !html.includes(': "graphite"'),
+      !html.includes('|| "amber"') &&
+      !html.includes(': "graphite"') &&
+      html.includes(': "mocha-mousse"'),
   );
   check(
     "T22 bootstrap validates saved id against known themes + resolves system",
@@ -296,19 +300,20 @@ check(
       utilsSrc.includes("metrivia.theme-vars"),
   );
   check(
-    "T24 CSS :root/.dark defaults are Amber (no Mocha/Graphite first paint)",
-    css.includes("Amber is the first-painted theme") &&
-      css.includes("oklch(0.9821 0 0)") &&
-      css.includes("oklch(0.1776 0 0)") &&
-      !css.includes("oklch(0.9529 0.0146 102.4597)") &&
+    "T24 CSS :root/.dark defaults are Mocha Mousse (no Amber/Graphite first paint)",
+    css.includes("Mocha Mousse is the first-painted theme") &&
+      css.includes("oklch(0.9529 0.0146 102.4597)") &&
+      css.includes("oklch(0.2721 0.0141 48.1783)") &&
+      !css.includes("oklch(0.9821 0 0)") &&
+      !css.includes("oklch(0.1776 0 0)") &&
       !css.includes("oklch(0.9551 0 0)") &&
       !css.includes("oklch(0.2178 0 0)"),
   );
   check(
-    "T25 Amber fresh load resolves to itself in both modes",
-    JSON.stringify(buildThemeCssVars("amber", "light")) !== "{}" &&
-      JSON.stringify(buildThemeCssVars("amber", "dark")) !== "{}" &&
-      resolveThemeId("amber") === "amber",
+    "T25 Mocha Mousse fresh load resolves to itself in both modes",
+    JSON.stringify(buildThemeCssVars("mocha-mousse", "light")) !== "{}" &&
+      JSON.stringify(buildThemeCssVars("mocha-mousse", "dark")) !== "{}" &&
+      resolveThemeId("mocha-mousse") === "mocha-mousse",
   );
 }
 

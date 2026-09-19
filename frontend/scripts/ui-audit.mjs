@@ -7,7 +7,7 @@
 //   animation safeguards (no transition-all, no `transition: all`, memoized
 //     dashboard subtree, single animation library, reduced-motion wiring)
 //   header contract (desktop spacer layout, mobile menu with appearance)
-//   theme bootstrap (Amber first paint, no Mocha/Graphite default)
+//   theme bootstrap (Mocha Mousse first paint, no Amber/Graphite default)
 //   upload contract (frontend 20 MiB constant + validation helper, backend
 //     20 MiB default + JSON 413 path, table windowing present)
 //
@@ -227,22 +227,25 @@ check(
 {
   const html = readFileSync(join(rootDir, "index.html"), "utf8");
   check(
-    "U21 theme bootstrap defaults to Amber with known-id validation",
+    "U21 theme bootstrap defaults to Mocha Mousse with known-id validation",
     html.includes('"amber"') &&
       html.includes("KNOWN_THEMES") &&
       html.includes("metrivia.theme-vars") &&
-      !html.includes('|| "mocha-mousse"') &&
+      !html.includes('|| "amber"') &&
       html.includes("mocha-mousse") &&
-      html.includes('"graphite"'),
+      html.includes('"graphite"') &&
+      html.includes(': "mocha-mousse"'),
   );
   const css = readSrc("index.css");
   check(
-    "U22 CSS first-paint defaults are Amber (no Mocha/Graphite tokens)",
-    css.includes("Amber is the first-painted theme") &&
-      css.includes("oklch(0.9821 0 0)") &&
-      css.includes("oklch(0.1776 0 0)") &&
-      !css.includes("oklch(0.9529 0.0146 102.4597)") &&
-      !css.includes("oklch(0.9551 0 0)"),
+    "U22 CSS first-paint defaults are Mocha Mousse (no Amber/Graphite tokens)",
+    css.includes("Mocha Mousse is the first-painted theme") &&
+      css.includes("oklch(0.9529 0.0146 102.4597)") &&
+      css.includes("oklch(0.2721 0.0141 48.1783)") &&
+      !css.includes("oklch(0.9821 0 0)") &&
+      !css.includes("oklch(0.1776 0 0)") &&
+      !css.includes("oklch(0.9551 0 0)") &&
+      !css.includes("oklch(0.2178 0 0)"),
   );
 }
 {

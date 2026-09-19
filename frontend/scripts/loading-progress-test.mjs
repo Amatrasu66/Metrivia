@@ -26,6 +26,8 @@
 //   F6  completion/error paths exit Tetris via the existing flows
 //   F7  fallback a11y (status, aria-busy, sr text, reduced motion intact)
 //   F8  fallback reuses the shared Tetris sizing conventions
+//   F9  fallback two-column composition (Tetris left, text/timer right)
+//   F10 marked upload-page copy is gone (badge, hero paragraph, subtitle)
 //
 // Usage:  npm run loading:test   (from frontend/)
 // Exit code is non-zero on any failure.
@@ -461,6 +463,26 @@ try {
       fallback.includes("lib/tetris-size") &&
       srcFile("components/states/BackendWakeState.jsx").includes("useWakeTetrisSize") &&
       !fallback.includes("generateTetrisFrames"),
+  );
+  check(
+    "F9 fallback is two-column: Tetris centered left, text/timer right",
+    fallback.includes("md:flex-row") &&
+      fallback.includes("TetrisLoader") &&
+      fallback.includes("justify-center") &&
+      fallback.includes("md:border-r") &&
+      fallback.includes("overflow-hidden") &&
+      fallback.includes("max-w-full") &&
+      fallback.includes("{elapsed}"),
+  );
+  const landing = srcFile("components/landing/UploadPage.jsx");
+  check(
+    "F10 marked upload copy removed (badge, hero paragraph, subtitle kept heading)",
+    !landing.includes("Responsive CSV visualization shell") &&
+      !landing.includes("Metrivia is a modern") &&
+      !zone.includes("Sent to the Metrivia backend for analysis. Files are not stored.") &&
+      landing.includes("Turn CSVs into clear, responsive dashboards") &&
+      zone.includes("Upload a CSV file") &&
+      zone.includes("Header row expected"),
   );
 }
 

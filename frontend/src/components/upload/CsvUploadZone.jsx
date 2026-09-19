@@ -65,9 +65,6 @@ export function CsvUploadZone({
         <h2 id="upload-heading" className="text-lg font-semibold tracking-tight">
           Upload a CSV file
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Sent to the Metrivia backend for analysis. Files are not stored.
-        </p>
       </div>
 
       <div

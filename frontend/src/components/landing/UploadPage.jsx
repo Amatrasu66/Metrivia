@@ -1,5 +1,4 @@
 import { ArrowRight } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CsvUploadZone } from "@/components/upload/CsvUploadZone"
@@ -44,7 +43,6 @@ export function UploadPage({
         aria-labelledby="hero-heading"
         className="flex min-w-0 flex-col items-start gap-5 sm:gap-6"
       >
-        <Badge>Responsive CSV visualization shell</Badge>
         <div className="flex min-w-0 max-w-3xl flex-col gap-3 sm:gap-4">
           <h1
             id="hero-heading"
@@ -52,11 +50,6 @@ export function UploadPage({
           >
             Turn CSVs into clear, responsive dashboards
           </h1>
-          <p className="max-w-prose text-[0.9375rem] leading-relaxed text-muted-foreground sm:text-base">
-            Metrivia is a modern analytics workspace. Start by uploading a
-            dataset, then explore it in a dashboard layout built for desktop,
-            laptop, tablet, and mobile.
-          </p>
         </div>
         <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:gap-2">
           <Button

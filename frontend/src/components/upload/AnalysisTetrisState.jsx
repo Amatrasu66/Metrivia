@@ -16,8 +16,12 @@ import { useWakeTetrisSize } from "@/lib/tetris-size"
  * - Tetris animation runs via the existing TetrisLoader (algorithm,
  *   reduced-motion, and status semantics untouched; wrapped aria-hidden so
  *   the card owns the single live region).
+ * - Two-column composition mirroring BackendWakeState: Tetris centered in
+ *   the left column, status text + elapsed timer balanced in the right
+ *   column; collapses to one centered column on narrow widths.
  * - Elapsed time ticks once per second from `analysisStartedAt` (visual
- *   only, aria-hidden); screen readers get one static status announcement.
+ *   only, aria-hidden, right column); screen readers get one static status
+ *   announcement.
  * - The 1s interval lives only while this fallback is mounted and is
  *   cleaned up on unmount.
  */
@@ -50,9 +54,12 @@ export function AnalysisTetrisState({ analysisStartedAt = null }) {
       role="status"
       aria-busy="true"
       aria-label="Still analyzing your data"
-      className="flex min-w-0 flex-col items-center gap-3 rounded-xl border border-border bg-muted/40 px-6 py-6 text-center"
+      className="flex min-w-0 max-w-full flex-col items-center gap-6 overflow-hidden rounded-xl border border-border bg-muted/40 px-6 py-8 text-center md:flex-row md:items-center md:gap-8"
     >
-      <span aria-hidden="true" className="flex min-w-0 max-w-full justify-center overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="flex min-w-0 flex-1 items-center justify-center overflow-hidden md:border-r md:border-border md:pr-8"
+      >
         <TetrisLoader
           columns={tetrisSize.columns}
           rows={tetrisSize.rows}
@@ -63,17 +70,22 @@ export function AnalysisTetrisState({ analysisStartedAt = null }) {
           loop
           label="Still analyzing your data"
         />
-      </span>
-      <div className="flex min-w-0 flex-col items-center gap-1">
-        <p className="text-sm font-medium">Still analyzing your data…</p>
-        <p className="text-xs text-muted-foreground sm:text-sm">
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-center">
+        <p className="text-sm font-medium sm:text-base">
+          Still analyzing your data…
+        </p>
+        <p className="max-w-full text-xs break-words text-muted-foreground sm:text-sm">
           Large datasets can take a little longer.
         </p>
         <p
           aria-hidden="true"
-          className="mt-1 text-xs font-medium tabular-nums text-muted-foreground"
+          className="mt-1 text-2xl font-semibold tracking-tight tabular-nums"
         >
-          {elapsed} elapsed
+          {elapsed}
+        </p>
+        <p aria-hidden="true" className="text-xs text-muted-foreground">
+          elapsed
         </p>
         <p className="sr-only">
           Still analyzing your data. The request continues in the background
