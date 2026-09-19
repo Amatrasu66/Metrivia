@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import { BackendWakeState } from "@/components/states/BackendWakeState"
 import { ErrorState } from "@/components/states/ErrorState"
-import { LoadingState } from "@/components/states/LoadingState"
+import { AnalysisProgressState } from "@/components/upload/AnalysisProgressState"
 
 export function CsvUploadZone({
   status,
@@ -140,12 +140,12 @@ export function CsvUploadZone({
           />
         ) : null}
 
-        {status === "uploading" || status === "loading" ? (
-          <LoadingState label="Uploading CSV…" />
-        ) : null}
-
-        {status === "analyzing" ? (
-          <LoadingState label="Analyzing your data…" />
+        {status === "uploading" || status === "loading" || status === "analyzing" ? (
+          <AnalysisProgressState
+            key={`${wakeStartedAt ?? ""}::${selectedFile?.name ?? ""}::${selectedFile?.size ?? ""}`}
+            label={status === "analyzing" ? "Analyzing your data…" : "Uploading CSV…"}
+            resetKey={`${wakeStartedAt ?? ""}::${selectedFile?.name ?? ""}::${selectedFile?.size ?? ""}`}
+          />
         ) : null}
 
         {status === "error" ? (

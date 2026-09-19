@@ -1,7 +1,7 @@
 "use client";;
 import { bisector } from "d3-array";
 import { scaleLinear, scaleTime } from "d3-scale";
-import { Children, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
+import { Children, isValidElement, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { DEFAULT_ANIMATION_EASING } from "./animation";
 import {
   isClipExcludedComponent,
@@ -15,6 +15,7 @@ import { DEFAULT_CHART_LIFECYCLE } from "./chart-phase";
 import { extractReferenceAreaConfigs } from "./reference-area-config";
 import { useScatterChartInteraction } from "./use-scatter-chart-interaction";
 import { buildYScalesForLines, getPrimaryYScale } from "./y-axis-scales";
+import { resolveScatterYDomain } from "./scatter-domain";
 
 export function ScatterChartInner({
   width,
@@ -84,19 +85,7 @@ export function ScatterChartInner({
         lines,
         data,
         innerHeight,
-        resolveDomain: (dataKeys) => {
-          let maxValue = 0;
-          for (const d of data) {
-            for (const key of dataKeys) {
-              const value = d[key];
-              if (typeof value === "number" && value > maxValue) {
-                maxValue = value;
-              }
-            }
-          }
-          const top = maxValue <= 0 ? 100 : maxValue * 1.1;
-          return [0, top];
-        },
+        resolveDomain: (dataKeys) => resolveScatterYDomain(data, dataKeys),
       }),
     [innerHeight, data, lines]
   );
@@ -150,6 +139,18 @@ export function ScatterChartInner({
     () => extractReferenceAreaConfigs(children),
     [children]
   );
+
+  // Series containment clip (secondary defense, NOT the domain fix above).
+  // Unique per mount via useId — deliberately not a hardcoded id, so two
+  // scatter charts on one page can never share a clip rect (cf. bklit-ui
+  // issue #226 for hardcoded clipPath ids). The pad only preserves marker
+  // ring/highlight overhang at plot edges; far-out coordinates (the old
+  // domain bug) are still clipped instead of spilling into later cards.
+  // Grid/axes stay outside the clip (clipExcluded) and tooltip/XAxis are
+  // HTML portals, so interaction is unaffected.
+  const rawClipId = useId().replace(/:/g, "");
+  const scatterClipId = `scatter-plot-clip-${rawClipId}`;
+  const SCATTER_CLIP_PAD = 14;
 
   if (width < 10 || height < 10) {
     return null;
@@ -218,7 +219,17 @@ export function ScatterChartInner({
         height={height}
         width={width}
       >
-        {defsChildren.length > 0 && <defs>{defsChildren}</defs>}
+        <defs>
+          {defsChildren}
+          <clipPath id={scatterClipId}>
+            <rect
+              height={innerHeight + SCATTER_CLIP_PAD * 2}
+              width={innerWidth + SCATTER_CLIP_PAD * 2}
+              x={-SCATTER_CLIP_PAD}
+              y={-SCATTER_CLIP_PAD}
+            />
+          </clipPath>
+        </defs>
 
         <rect fill="transparent" height={height} width={width} x={0} y={0} />
 
@@ -237,7 +248,7 @@ export function ScatterChartInner({
 
           {clipExcludedChildren}
           {underlayChildren}
-          {preOverlayChildren}
+          <g clipPath={`url(#${scatterClipId})`}>{preOverlayChildren}</g>
           {postOverlayChildren}
         </g>
       </svg>

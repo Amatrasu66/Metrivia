@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, Server } from "lucide-react"
+import { Check } from "lucide-react"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
@@ -8,6 +8,7 @@ import {
   wakeActiveStageIndex,
   wakeStageMessage,
 } from "@/lib/wake-stages"
+import { TetrisLoader } from "@/components/states/TetrisLoader"
 
 function StageDot({ done, active, reduceMotion }) {
   if (done) {
@@ -88,31 +89,34 @@ export function BackendWakeState({ startedAt, phase = "waking" }) {
     >
       <span
         aria-hidden="true"
-        className="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground"
+        className="flex min-w-0 max-w-full shrink-0 items-center justify-center overflow-hidden"
       >
-        {!isReady && !reduceMotion ? (
-          <motion.span
-            aria-hidden="true"
-            animate={{ scale: [1, 1.4], opacity: [0.6, 0] }}
-            transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
-            className="absolute inset-0 rounded-full border-2 border-primary/50"
-          />
-        ) : null}
-        {isReady && !reduceMotion ? (
-          <motion.span
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 400, damping: 22 }}
-            className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground"
-          >
-            <Check aria-hidden="true" className="size-5" />
-          </motion.span>
-        ) : isReady ? (
-          <span className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check aria-hidden="true" className="size-5" />
-          </span>
+        {isReady ? (
+          reduceMotion ? (
+            <span className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check aria-hidden="true" className="size-5" />
+            </span>
+          ) : (
+            <motion.span
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
+              className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground"
+            >
+              <Check aria-hidden="true" className="size-5" />
+            </motion.span>
+          )
         ) : (
-          <Server aria-hidden="true" className="size-5" />
+          <TetrisLoader
+            columns={10}
+            rows={5}
+            cellSize={13}
+            gap={3}
+            speed={420}
+            playing
+            loop
+            label="Backend is starting, Tetris blocks falling"
+          />
         )}
       </span>
 

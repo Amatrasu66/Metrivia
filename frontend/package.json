@@ -13,6 +13,8 @@
     "workspaces:test": "node ./scripts/workspaces-test.mjs",
     "pie:test": "node ./scripts/pie-tooltip-test.mjs",
     "bar:test": "node ./scripts/bar-labels-test.mjs",
+    "scatter:test": "node ./scripts/scatter-bounds-test.mjs",
+    "loading:test": "node ./scripts/loading-progress-test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
