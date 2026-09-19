@@ -2,6 +2,11 @@ import { useCallback, useMemo, useState } from "react"
 import { PieChart } from "@/components/charts/pie-chart"
 import { PieSlice } from "@/components/charts/pie-slice"
 import { formatCount } from "@/lib/format"
+import {
+  clampTooltipAnchor,
+  formatShare,
+  pieSliceAnchor,
+} from "@/lib/pie-tooltip"
 import { cn } from "@/lib/utils"
 
 // Slice colors cycle var(--chart-1)…var(--chart-5) in the Bklit pie
@@ -14,18 +19,6 @@ import { cn } from "@/lib/utils"
 // highlight below never relies on color alone.
 function sliceColor(index) {
   return `var(--chart-${(index % 5) + 1})`
-}
-
-function formatShare(value, total) {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    !Number.isFinite(total) ||
-    total <= 0
-  ) {
-    return null
-  }
-  return `${((value / total) * 100).toFixed(1)}%`
 }
 
 /**
@@ -62,6 +55,19 @@ export function PieChartView({ data }) {
   )
   const activeDatum = activeIndex >= 0 ? rows[activeIndex] : null
   const activeShare = activeDatum ? formatShare(activeDatum.value, total) : null
+  // Dynamic tooltip anchor (Phase I): the chart library exposes no cursor
+  // position — only the hovered index — so the anchor is recomputed from
+  // the slice's sector geometry (same d3 layout the chart uses) and
+  // clamped inside the chart. Percentages of the square container, so it
+  // tracks left/right/top/bottom slices at any rendered size, including
+  // legend-focus activation where no pointer exists at all.
+  const anchor = useMemo(
+    () =>
+      activeIndex >= 0
+        ? clampTooltipAnchor(pieSliceAnchor(rows, activeIndex))
+        : null,
+    [rows, activeIndex],
+  )
 
   // Slice → legend: the chart calls back with an index (or null on leave);
   // it is translated to the stable label immediately. Stable reference so
@@ -91,17 +97,25 @@ export function PieChartView({ data }) {
             <PieSlice key={d.label} index={index} />
           ))}
         </PieChart>
-        {/* Tooltip: category + formatted value + share. The chart library
-            exposes no cursor-anchored tooltip for pie, so this is a fixed
-            overlay in the chart corner — pointer-events-none so it can never
-            steal slice hover, aria-live so keyboard/AT users get the same
-            information as sighted hover users. Mounts only while a slice is
-            active, so there is no layout shift. */}
-        {activeDatum ? (
+        {/* Tooltip: category + formatted value + share, anchored near the
+            active slice's sector (percentages of the square container,
+            clamped inside). The chart library exposes no cursor-anchored
+            tooltip for pie; geometry anchoring also covers legend
+            hover/focus, where no pointer exists. pointer-events-none so it
+            can never steal slice hover, aria-live so keyboard/AT users get
+            the same information as sighted hover users. Mounts only while
+            a slice is active, so there is no layout shift; only a subtle
+            opacity fade, no motion system. */}
+        {activeDatum && anchor ? (
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-none absolute top-1 right-1 min-w-0 max-w-[12rem] rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs shadow-sm"
+            style={{
+              left: `${anchor.xPct}%`,
+              top: `${anchor.yPct}%`,
+              transform: "translate(-50%, -50%)",
+            }}
+            className="pointer-events-none absolute min-w-0 max-w-[12rem] rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs shadow-sm transition-opacity duration-150"
           >
             <p className="min-w-0 truncate font-semibold text-popover-foreground">
               {activeDatum.label}

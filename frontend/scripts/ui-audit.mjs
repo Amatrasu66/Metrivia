@@ -304,6 +304,15 @@ check(
       pie.includes("formatCount(activeDatum.value)"),
   );
   check(
+    "P4b tooltip is geometry-anchored near the slice and clamped inside",
+    pie.includes("pieSliceAnchor") &&
+      pie.includes("clampTooltipAnchor") &&
+      pie.includes("left: `${anchor.xPct}%`") &&
+      pie.includes("top: `${anchor.yPct}%`") &&
+      pie.includes("translate(-50%, -50%)") &&
+      !pie.includes("top-1 right-1"),
+  );
+  check(
     "P5 legend entries are keyboard-focusable buttons with color-independent active state",
     pie.includes("<button") &&
       pie.includes("aria-label") &&

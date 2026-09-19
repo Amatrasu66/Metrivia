@@ -11,6 +11,7 @@
     "themes:test": "node ./scripts/theme-test.mjs",
     "ui:audit": "node ./scripts/ui-audit.mjs",
     "workspaces:test": "node ./scripts/workspaces-test.mjs",
+    "pie:test": "node ./scripts/pie-tooltip-test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

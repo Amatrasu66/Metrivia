@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+import zlib
 
 import pandas as pd
 from flask import Flask, Response, jsonify, request
@@ -24,6 +25,19 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from analysis import analyze_dataframe
 
 logger = logging.getLogger("metrivia.app")
+
+# Phase I response compression: the upload payload repeats every column
+# name in every row, so an 11.5 MiB CSV becomes ~38 MiB of JSON. Browsers
+# always send Accept-Encoding (fetch adds it automatically) and decompress
+# transparently, so gzipping the streamed response only shrinks transfer +
+# browser buffering with zero frontend changes. Stdlib only (no new
+# dependency), level 1: measured 38.4 MiB -> 10.1 MiB in 0.50s locally
+# vs 5.7 MiB in 2.23s at level 6 — on Render Free's 0.1 CPU the faster
+# level wins back far more transfer time than the extra ~4 MiB costs.
+# Only applied above GZIP_MIN_BYTES of raw upload (small uploads skip the
+# overhead); health/errors stay uncompressed.
+GZIP_COMPRESSLEVEL = 1
+GZIP_MIN_BYTES = 64 * 1024
 
 # Application CSV ceiling: 20 MiB. ONE explicit constant — the route, the
 # manual read cap, and the Flask backstop below all derive from it.
@@ -177,17 +191,23 @@ def create_app(cors_origins=None):
             del df
         row_count = result.get("row_count")
         column_count = result.get("column_count")
+        raw_size = request.content_length or 0
+        response = _stream_json(result)
+        use_gzip = raw_size >= GZIP_MIN_BYTES and _accepts_gzip()
+        if use_gzip:
+            response = _gzip_response(response)
         logger.info(
-            "upload filename=%s size_bytes=%d rows=%s cols=%s read_ms=%.1f analysis_ms=%.1f total_ms=%.1f",
+            "upload filename=%s size_bytes=%d rows=%s cols=%s read_ms=%.1f analysis_ms=%.1f gzip=%d total_ms=%.1f",
             safe_name,
-            request.content_length or 0,
+            raw_size,
             row_count,
             column_count,
             read_ms,
             analysis_ms,
+            1 if use_gzip else 0,
             (time.perf_counter() - request_started) * 1000,
         )
-        return _stream_json(result), 200
+        return response, 200
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_too_large(_exc):
@@ -226,6 +246,56 @@ def _stream_json(payload):
             yield chunk.encode("utf-8")
 
     return Response(generate(), content_type="application/json")
+
+
+def _accepts_gzip():
+    """True when the client advertised gzip support (browsers always do)."""
+    return "gzip" in request.headers.get("Accept-Encoding", "").lower()
+
+
+def _gzip_response(response):
+    """Wrap a streamed JSON response in gzip without buffering it.
+
+    Compresses chunk-by-chunk as iterencode produces them, so the 38 MiB
+    worst case is never held as one giant string AND never held compressed
+    whole either — memory stays bounded while transfer shrinks ~4x.
+    """
+
+    # Capture the upstream iterable before rebinding: looking it up lazily
+    # inside generate() would resolve to this wrapper itself.
+    upstream = response.response
+
+    def generate():
+        # iterencode yields thousands of tiny tokens; one zlib call per
+        # token would drown in per-call overhead, so buffer to ~64 KiB
+        # before compressing (still bounded, still streaming).
+        compressor = zlib.compressobj(GZIP_COMPRESSLEVEL, zlib.DEFLATED, 31)
+        buffered = []
+        buffered_bytes = 0
+        for chunk in upstream:
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            buffered.append(chunk)
+            buffered_bytes += len(chunk)
+            if buffered_bytes >= 65536:
+                out = compressor.compress(b"".join(buffered))
+                if out:
+                    yield out
+                buffered = []
+                buffered_bytes = 0
+        if buffered:
+            out = compressor.compress(b"".join(buffered))
+            if out:
+                yield out
+        tail = compressor.flush()
+        if tail:
+            yield tail
+
+    response.response = generate()
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Vary"] = "Accept-Encoding"
+    response.headers.pop("Content-Length", None)
+    return response
 
 
 def _read_csv_bytes(raw):
