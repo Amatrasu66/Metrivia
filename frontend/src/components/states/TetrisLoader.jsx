@@ -193,7 +193,16 @@ export function TetrisLoader({
             {Array.from({ length: width * height }).map((_, i) => (
                 <div
                     key={i}
-                    style={{ height: "var(--tetris-cell)", borderRadius: "calc(var(--tetris-cell) / 3)" }}
+                    style={{
+                        height: "var(--tetris-cell)",
+                        borderRadius: "calc(var(--tetris-cell) / 3)",
+                        // The rAF loop repaints cells via inline backgroundColor
+                        // up to every frame: opt out of the global `*`
+                        // background-color transition so frames snap crisply
+                        // instead of smearing mid-transition (and churning
+                        // paint for the whole time the loader is visible).
+                        transition: "none",
+                    }}
                     className={cn("bg-foreground/10", dotClassName)}
                 />
             ))}

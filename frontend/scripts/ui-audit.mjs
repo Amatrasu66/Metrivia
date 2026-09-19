@@ -337,5 +337,64 @@ check(
   );
 }
 
+// --- stability & jitter regression tripwires ----------------------------------------
+// Root causes from the stability audit (source-level guards — visual
+// profiling still needs the manual browser pass):
+//   * Tetris dots are repainted imperatively via inline backgroundColor up
+//     to every animation frame, so they must opt out of the global `*`
+//     background-color transition or frames smear + paint churns nonstop.
+//   * Pages have structurally different heights (short upload vs long
+//     dashboard/settings), so a reserved scrollbar gutter keeps centered
+//     layouts from shifting horizontally on navigation.
+//   * Elapsed/progress timers must stay component-local with cleanup; theme
+//     application must stay event-driven (no polling).
+{
+  const tetris = stripComments(readSrc("components/states/TetrisLoader.jsx"));
+  check(
+    "U23 Tetris cells opt out of transitions (rAF paints snap, no churn)",
+    tetris.includes('transition: "none"') &&
+      !tetris.includes("transition-all"),
+  );
+  const css = readSrc("index.css");
+  check(
+    "U24 scrollbar gutter is stable (no viewport shift across views)",
+    /html\s*\{[^}]*scrollbar-gutter:\s*stable/.test(css),
+  );
+  check(
+    "U25 Tetris clock is rAF-only with cleanup (no parallel timer driver)",
+    tetris.includes("requestAnimationFrame") &&
+      tetris.includes("cancelAnimationFrame") &&
+      !tetris.includes("setInterval"),
+  );
+}
+{
+  const withIntervals = srcFiles
+    .filter((f) => stripComments(readFileSync(f, "utf8")).includes("setInterval"))
+    .map(rel)
+    .sort();
+  const expected = [
+    "components/states/BackendWakeState.jsx",
+    "components/upload/AnalysisTetrisState.jsx",
+    "hooks/useDelayedProgress.js",
+  ].sort();
+  const allCleaned = withIntervals.every((f) =>
+    stripComments(readFileSync(join(srcDir, f), "utf8")).includes("clearInterval"),
+  );
+  check(
+    "U26 intervals are component-local with cleanup (progress + 1s tickers only)",
+    JSON.stringify(withIntervals) === JSON.stringify(expected) && allCleaned,
+    withIntervals.join(", "),
+  );
+}
+{
+  const settings = stripComments(readSrc("hooks/SettingsProvider.jsx"));
+  check(
+    "U27 theme application is event-driven (no polling timers)",
+    settings.includes("applyThemeTokens") &&
+      !settings.includes("setInterval") &&
+      !settings.includes("setTimeout"),
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

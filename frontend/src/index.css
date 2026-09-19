@@ -292,6 +292,11 @@
   }
   html {
     @apply font-sans;
+    /* Reserve the vertical-scrollbar gutter on every page so navigating
+       between short (upload) and long (dashboard/settings) views never
+       shifts centered content horizontally. No-op where scrollbars overlay
+       (macOS default, mobile); classic scrollbars keep a stable gutter. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground antialiased;
