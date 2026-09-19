@@ -5,6 +5,11 @@ Endpoints:
     POST /api/upload   Accept a CSV file (multipart/form-data), analyze it
                        with pandas entirely in memory, and return dataset
                        statistics plus the full row data.
+    POST /api/upload?stream=progress
+                       Same analysis, but streams NDJSON backend milestones
+                       (`progress` events) followed by the dataset result,
+                       so the frontend progress bar tracks real processing
+                       instead of an estimated animation.
 
 Uploaded files are never written to disk. No database, no auth, no
 background workers — intentionally minimal for Render's free tier.
@@ -22,7 +27,13 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from analysis import analyze_dataframe
+from analysis import (
+    PROGRESS_CSV_PARSED,
+    PROGRESS_FILE_ACCEPTED,
+    PROGRESS_RESPONSE_READY,
+    _analyze_iter,
+    analyze_dataframe,
+)
 
 logger = logging.getLogger("metrivia.app")
 
@@ -163,6 +174,21 @@ def create_app(cors_origins=None):
                 400,
             )
 
+        # Phase L: same-request backend progress. `?stream=progress` (or an
+        # NDJSON Accept header) streams real milestones from this same
+        # upload request — no job endpoint, no polling, no Redis/Celery/DB,
+        # no WebSocket. Pre-read validation above still returns normal JSON
+        # errors with HTTP status; only post-validation processing streams.
+        # The streamed response is intentionally NOT gzipped: gzip buffers
+        # small progress events until its 64 KiB window fills, which would
+        # delay every milestone until the end. The default JSON path below
+        # keeps Phase I gzip untouched.
+        if _wants_progress_stream():
+            raw_size = request.content_length or 0
+            return _progress_stream_response(
+                raw, safe_name, raw_size, request_started
+            )
+
         try:
             read_started = time.perf_counter()
             df = _read_csv_bytes(raw)
@@ -230,6 +256,147 @@ def create_app(cors_origins=None):
 
 def _error(message, status):
     return jsonify({"error": message}), status
+
+
+def _wants_progress_stream():
+    """True when the client asked for same-request backend progress.
+
+    Explicit `?stream=progress` wins; an NDJSON Accept header is honored
+    too so generic SSE/NDJSON clients get progress without the query param.
+    """
+    try:
+        if request.args.get("stream") == "progress":
+            return True
+    except Exception:
+        pass
+    try:
+        return "application/x-ndjson" in request.headers.get("Accept", "").lower()
+    except Exception:
+        return False
+
+
+def _progress_line(value, stage, label):
+    return (
+        json.dumps(
+            {
+                "type": "progress",
+                "value": round(float(value), 1),
+                "stage": stage,
+                "label": label,
+            }
+        )
+        + "\n"
+    )
+
+
+def _progress_error_line(message, status):
+    return (
+        json.dumps({"type": "error", "error": message, "status": status}) + "\n"
+    )
+
+
+def _progress_stream_response(raw, safe_name, raw_size, request_started):
+    """Stream real backend milestones + the dataset from one upload request.
+
+    Protocol (each progress/error line ends with `\\n`):
+        {"type":"progress","value":5,...}   ... one per real milestone,
+                                            ordered, monotonic, 0..90
+        {"type":"result-start"}              marker: backend work is done
+        <raw dataset JSON>                    same shape as POST /api/upload,
+                                            chunked via iterencode (Phase H
+                                            streaming preserved, never one
+                                            giant string on the server)
+        \\n
+      or, after streaming started:
+        {"type":"error","error":msg,"status":400}
+
+    The dataset JSON contains no literal newlines (json encoder escapes
+    them), so `\\n` unambiguously delimits the small header lines. Progress
+    never reaches 100 here — the client sets exactly 100 only after it has
+    parsed the result (i.e. the result is actually usable).
+    """
+
+    def generate():
+        state = {"raw": raw}
+        read_ms = 0.0
+        analysis_ms = 0.0
+        try:
+            yield _progress_line(
+                PROGRESS_FILE_ACCEPTED, "file_accepted", "File received"
+            )
+            raw_bytes = state.pop("raw")
+            try:
+                read_started = time.perf_counter()
+                df = _read_csv_bytes(raw_bytes)
+                read_ms = (time.perf_counter() - read_started) * 1000
+            except UploadError as exc:
+                yield _progress_error_line(exc.message, exc.status)
+                return
+            except Exception:
+                yield _progress_error_line(
+                    "Failed to analyze the CSV file due to an unexpected error.",
+                    500,
+                )
+                return
+            finally:
+                del raw_bytes
+            yield _progress_line(
+                PROGRESS_CSV_PARSED, "csv_parsed", "CSV parsed"
+            )
+
+            analysis_started = time.perf_counter()
+            result = None
+            try:
+                for item in _analyze_iter(df, safe_name):
+                    if item[0] == "progress":
+                        yield _progress_line(item[1], item[2], item[3])
+                    elif item[0] == "result":
+                        result = item[1]
+            except Exception:
+                yield _progress_error_line(
+                    "Failed to analyze the CSV file.", 500
+                )
+                return
+            finally:
+                try:
+                    del df
+                except Exception:
+                    pass
+            analysis_ms = (time.perf_counter() - analysis_started) * 1000
+            if result is None:
+                yield _progress_error_line(
+                    "Failed to analyze the CSV file.", 500
+                )
+                return
+            yield _progress_line(
+                PROGRESS_RESPONSE_READY,
+                "response_ready",
+                "Preparing response",
+            )
+            yield json.dumps({"type": "result-start"}) + "\n"
+            for chunk in json.JSONEncoder().iterencode(result):
+                yield chunk.encode("utf-8")
+            yield b"\n"
+            logger.info(
+                "upload stream=1 filename=%s size_bytes=%d rows=%s cols=%s "
+                "read_ms=%.1f analysis_ms=%.1f gzip=0 total_ms=%.1f",
+                safe_name,
+                raw_size,
+                result.get("row_count"),
+                result.get("column_count"),
+                read_ms,
+                analysis_ms,
+                (time.perf_counter() - request_started) * 1000,
+            )
+        finally:
+            state.pop("raw", None)
+
+    response = Response(generate(), mimetype="application/x-ndjson")
+    response.headers["Cache-Control"] = "no-cache"
+    # Tell buffering proxies (nginx, Render's edge) to forward each chunk
+    # immediately instead of holding small progress events.
+    response.headers["X-Accel-Buffering"] = "no"
+    return response, 200
 
 
 def _stream_json(payload):

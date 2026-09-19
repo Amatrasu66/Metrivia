@@ -7,6 +7,7 @@ testable, dependency-light, and free of any request handling.
 import logging
 import math
 import time
+from itertools import islice
 
 import numpy as np
 import pandas as pd
@@ -241,18 +242,71 @@ def _column_json_values(series):
     return out
 
 
-def analyze_dataframe(df, filename):
-    """Analyze an already-parsed DataFrame and return the API payload."""
+# Phase L backend progress milestones (shared with app.py's streaming
+# upload endpoint). Values are grounded in measured timings on the 12 MiB /
+# 50k-row x 33-column Spotify CSV (local): read_csv ~0.5-1s (~15%), column
+# analysis (classification + numeric stats, fused single pass) ~1.6s (~40%),
+# record conversion ~0.6-1.8s (~20-25%), JSON serialization streams during
+# transfer. Ranges are approximate weights, not exact predictions — the
+# frontend never exceeds the latest reported milestone.
+PROGRESS_FILE_ACCEPTED = 5
+PROGRESS_CSV_PARSED = 20
+PROGRESS_ANALYSIS_START = 20
+PROGRESS_ANALYSIS_END = 60
+PROGRESS_CONVERT_START = 60
+PROGRESS_CONVERT_END = 80
+PROGRESS_ASSEMBLE_START = 80
+PROGRESS_ASSEMBLE_END = 85
+PROGRESS_RESPONSE_READY = 90
+
+# Row-assembly batch size for progress reporting: the preview list must exist
+# in full anyway (all rows returned), so batching only controls how often a
+# milestone is emitted, never the output. 5000 rows keeps per-batch work
+# small while emitting ~10 events for a 50k-row file and 1 for small files.
+PROGRESS_PREVIEW_BATCH_ROWS = 5000
+
+
+def analyze_dataframe(df, filename, on_progress=None):
+    """Analyze an already-parsed DataFrame and return the API payload.
+
+    `on_progress`, when given, is called as `on_progress(value, stage,
+    label)` with a monotonically increasing `value` in 0..90 after each
+    real milestone (per column analyzed, per column converted, per row
+    batch assembled). It adds no extra data passes — the single fused
+    classification/stats pass and the single conversion pass are unchanged;
+    the callback is a cheap per-column/per-batch hook. When None (existing
+    callers/tests), behavior and output are byte-identical to before.
+    """
+    payload = None
+    for item in _analyze_iter(df, filename):
+        if item[0] == "progress" and on_progress is not None:
+            on_progress(item[1], item[2], item[3])
+        elif item[0] == "result":
+            payload = item[1]
+    return payload
+
+
+def _analyze_iter(df, filename):
+    """Incremental analysis generator (single code path for progress).
+
+    Yields `("progress", value, stage, label)` after each real milestone so
+    a streaming response can flush each event to the client immediately
+    (single-threaded, no worker thread, no queue), then yields `("result",
+    payload)` once. `analyze_dataframe` above consumes this same iterator,
+    so buffered and streamed paths can never diverge in output.
+    """
     started = time.perf_counter()
     row_count = int(len(df))
     column_names = [str(c) for c in df.columns]
+    columns = list(df.columns)
+    column_total = len(columns)
 
     dtypes = {}
     missing = {}
     unique = {}
     numeric_stats = {}
 
-    for column in df.columns:
+    for index, column in enumerate(columns):
         name = str(column)
         series = df[column]
         # Shared temporaries: one dropna, one nunique, one coercion per
@@ -269,6 +323,11 @@ def analyze_dataframe(df, filename):
         unique[name] = unique_count
         if kind == "numeric":
             numeric_stats[name] = numeric_summary(series, coerced)
+        if column_total > 0:
+            value = PROGRESS_ANALYSIS_START + ((index + 1) / column_total) * (
+                PROGRESS_ANALYSIS_END - PROGRESS_ANALYSIS_START
+            )
+            yield ("progress", value, "analyzing_columns", "Analyzing columns")
     stats_ms = (time.perf_counter() - started) * 1000
 
     # The full row set is returned (all rows, all columns): the frontend
@@ -281,10 +340,34 @@ def analyze_dataframe(df, filename):
     # dict comprehension (previously ~2/3 of backend time on the 50k-row
     # Spotify CSV). Row dicts keep the exact same keys/values.
     records_ms_start = time.perf_counter()
-    column_values = [_column_json_values(df[c]) for c in df.columns]
-    preview = [
-        dict(zip(column_names, row)) for row in zip(*column_values)
-    ]
+    column_values = []
+    for index, column in enumerate(columns):
+        column_values.append(_column_json_values(df[column]))
+        if column_total > 0:
+            value = PROGRESS_CONVERT_START + ((index + 1) / column_total) * (
+                PROGRESS_CONVERT_END - PROGRESS_CONVERT_START
+            )
+            yield ("progress", value, "converting_records", "Converting records")
+    preview = []
+    if row_count > 0 and column_total > 0:
+        row_iter = zip(*column_values)
+        assembled = 0
+        while True:
+            chunk = [
+                dict(zip(column_names, row))
+                for row in islice(row_iter, PROGRESS_PREVIEW_BATCH_ROWS)
+            ]
+            if not chunk:
+                break
+            preview.extend(chunk)
+            assembled += len(chunk)
+            fraction = min(1.0, assembled / row_count)
+            value = PROGRESS_ASSEMBLE_START + fraction * (
+                PROGRESS_ASSEMBLE_END - PROGRESS_ASSEMBLE_START
+            )
+            yield ("progress", value, "assembling_rows", "Assembling rows")
+    elif row_count > 0:
+        preview = [dict(zip(column_names, row)) for row in zip(*column_values)]
     records_ms = (time.perf_counter() - records_ms_start) * 1000
     total_ms = (time.perf_counter() - started) * 1000
     logger.info(
@@ -297,15 +380,18 @@ def analyze_dataframe(df, filename):
         total_ms,
     )
 
-    return {
-        "filename": filename,
-        "row_count": row_count,
-        "column_count": len(column_names),
-        "columns": column_names,
-        "dtypes": dtypes,
-        "missing": missing,
-        "unique": unique,
-        "numeric_stats": numeric_stats,
-        "preview": preview,
-        "preview_count": len(preview),
-    }
+    yield (
+        "result",
+        {
+            "filename": filename,
+            "row_count": row_count,
+            "column_count": len(column_names),
+            "columns": column_names,
+            "dtypes": dtypes,
+            "missing": missing,
+            "unique": unique,
+            "numeric_stats": numeric_stats,
+            "preview": preview,
+            "preview_count": len(preview),
+        },
+    )

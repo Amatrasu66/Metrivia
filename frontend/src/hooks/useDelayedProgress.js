@@ -1,114 +1,149 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 /**
- * Phase K smart loading: spinner first, staged estimated progress only if
+ * Phase L backend-aware loading: spinner first, truthful progress only if
  * the operation is still running after `delayMs` (~800ms).
  *
- * The upload API returns the completed result (no streaming stages), so
- * progress is *estimated*, never a backend percentage claim. Stages are
- * fixed labels mapped from the estimated value:
+ * The upload API streams real backend milestones over the same request
+ * (`POST /api/upload?stream=progress`): ordered, monotonic values in 0..90
+ * (file accepted → CSV parsed → per-column analysis → per-column
+ * conversion → row assembly → response ready). The caller forwards the
+ * latest milestone as `backendValue` (+ truthful `backendStage` label);
+ * this hook only *displays* it:
  *
- *   0–15%    Starting analysis
- *   15–35%   Reading CSV
- *   35–55%   Detecting column types
- *   55–75%   Calculating statistics
- *   75–90%   Preparing chart data
- *   90–95%   Finalizing
- *   95%      Waiting for server response (cap — waits for the real response)
- *
- * Rules enforced here:
- * - Never renders progress before `delayMs` (fast uploads keep the spinner).
- * - Never exceeds `cap` (95) while `active` — success sets 100 via `complete()`.
- * - All timers are cancelled on unmount, `active` false, or `resetKey` change
- *   (workspace close / new file / retry), so no timer outlives its workspace.
- * - Workspace-ID safety lives with the caller: pass a `resetKey` that changes
- *   per workspace upload (e.g. file name + wake timestamp) and mount with
- *   `key={resetKey}` so a new upload remounts with fresh state — a late timer
- *   from another workspace can never promote this one.
- * - No polling, no SSE, no backend API change.
+ * - Never renders progress before `delayMs` (fast uploads keep the spinner;
+ *   early backend events are buffered and the bar initializes from the
+ *   latest known milestone instead of starting at 0 and jumping).
+ * - Moves the bar LINEARLY toward the latest backend milestone — no
+ *   ease-out, no exponential curve, no estimated 0→95% timer. Each tick
+ *   advances at most `LINEAR_RATE_PER_SEC`, never overshoots the target,
+ *   and never moves backward.
+ * - Never exceeds `cap` (99) while waiting and never reaches 100 until the
+ *   caller reports a usable result (`backendValue={100}` on parsed dataset
+ *   or `complete()`), so 100% always means "result usable".
+ * - All timers are cancelled on unmount, `active` false, or `resetKey`
+ *   change (workspace close / new file / retry), so no timer outlives its
+ *   workspace. Pair with `key={resetKey}` upstream for fresh state.
+ * - Workspace-ID safety lives with the caller: pass a `resetKey` that
+ *   changes per workspace upload (e.g. file name + wake timestamp).
  */
 
 export const PROGRESS_DELAY_MS = 800
-export const PROGRESS_CAP = 95
+export const PROGRESS_CAP = 99
 export const PROGRESS_MIN_VISIBLE_MS = 400
+export const PROGRESS_SMOOTH_INTERVAL_MS = 100
+export const PROGRESS_LINEAR_RATE_PER_SEC = 50
 
 export function stageLabelForValue(value) {
-  if (value < 15) return "Starting analysis"
-  if (value < 35) return "Reading CSV"
-  if (value < 55) return "Detecting column types"
-  if (value < 75) return "Calculating statistics"
-  if (value < 90) return "Preparing chart data"
-  if (value < 95) return "Finalizing"
-  return "Waiting for server response"
+  if (value < 5) return "Starting analysis"
+  if (value < 20) return "File received"
+  if (value < 60) return "Analyzing columns"
+  if (value < 80) return "Converting records"
+  if (value < 85) return "Assembling rows"
+  if (value < 100) return "Preparing response"
+  return "Complete"
+}
+
+function clampToCap(value, cap) {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(cap, Math.max(0, value))
 }
 
 /**
  * @param {object} options
  * @param {boolean} options.active — true while the upload/analysis is in flight
  * @param {string} [options.resetKey] — changes restart timers (use with key={resetKey})
+ * @param {number|null} [options.backendValue] — latest backend milestone (0..100) or null
+ * @param {string|null} [options.backendStage] — truthful backend label for the milestone
  * @param {number} [options.delayMs] — spinner-only window before progress
- * @param {number} [options.cap] — max value while waiting (default 95)
+ * @param {number} [options.cap] — max value while waiting (default 99; 100 only via result)
  */
 export function useDelayedProgress({
   active,
   resetKey = "",
+  backendValue = null,
+  backendStage = null,
   delayMs = PROGRESS_DELAY_MS,
   cap = PROGRESS_CAP,
 } = {}) {
   const [showProgress, setShowProgress] = useState(false)
   const [value, setValue] = useState(0)
+  // Latest backend milestone seen (monotonic: decreases are ignored so the
+  // bar can never move backward even if a chunk ever arrived out of order).
+  const targetRef = useRef(0)
 
-  // The parent mounts this hook with `active: true` and unmounts on status
-  // change (success/failure/workspace close), so unmount discards state —
-  // no reset effect needed. `resetKey` restarts timers; pair with
-  // `key={resetKey}` upstream for fresh state per upload. All setState calls
-  // below run inside timer callbacks (never synchronously in the effect
-  // body), and cleanup clears every timer.
+  useEffect(() => {
+    if (typeof backendValue === "number" && Number.isFinite(backendValue)) {
+      const clamped = clampToCap(backendValue, cap)
+      if (clamped > targetRef.current) {
+        targetRef.current = clamped
+      }
+    }
+  }, [backendValue, cap])
+
+  // Spinner-only window. When the bar promotes, it initializes from the
+  // latest known backend milestone (never 0-then-jump, never backward).
   useEffect(() => {
     if (!active) {
       return undefined
     }
+    targetRef.current =
+      typeof backendValue === "number" && Number.isFinite(backendValue)
+        ? Math.max(0, clampToCap(backendValue, cap))
+        : 0
     let delayTimer = null
-    let tickTimer = null
     let cancelled = false
-    const startedAt = Date.now()
-
-    const advance = () => {
-      if (cancelled) return
-      const elapsed = Date.now() - startedAt
-      // Eased approach to `cap`: fast early, slow near the cap. Time constant
-      // ~4.5s reaches ~90% of cap in ~10s — plausible for a 10 MiB CSV without
-      // ever claiming backend percentages.
-      const target = cap * (1 - Math.exp(-elapsed / 4500))
-      // Small floor so the bar visibly moves right after promotion.
-      const next = Math.min(cap, Math.max(2, target))
-      setValue((prev) => (next > prev ? next : prev))
-      tickTimer = setTimeout(advance, 120)
-    }
-
     delayTimer = setTimeout(() => {
       if (cancelled) return
+      setValue(targetRef.current)
       setShowProgress(true)
-      advance()
     }, delayMs)
-
     return () => {
       cancelled = true
       if (delayTimer !== null) clearTimeout(delayTimer)
-      if (tickTimer !== null) clearTimeout(tickTimer)
     }
-  }, [active, resetKey, delayMs, cap])
+    // backendValue/cap intentionally excluded: promotion reads the latest
+    // via targetRef at fire time; including them would restart the 800ms
+    // window on every milestone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, resetKey, delayMs])
+
+  // Linear smoothing toward the latest milestone. Fixed step per tick, no
+  // easing curve, no overshoot past the target, never backward.
+  useEffect(() => {
+    if (!active || !showProgress) {
+      return undefined
+    }
+    let cancelled = false
+    const step = PROGRESS_LINEAR_RATE_PER_SEC * (PROGRESS_SMOOTH_INTERVAL_MS / 1000)
+    const tickTimer = setInterval(() => {
+      if (cancelled) return
+      const target = targetRef.current
+      setValue((prev) => {
+        if (target <= prev) return prev
+        return Math.min(target, prev + step)
+      })
+    }, PROGRESS_SMOOTH_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(tickTimer)
+    }
+  }, [active, resetKey, showProgress])
 
   const complete = () => {
-    // Success path: jump to 100%. The caller unmounts immediately after
-    // (dashboard replaces the loader), so no artificial delay is added —
-    // this only ensures the value never sticks at 95 on completion.
+    // Success path: the result has been received AND parsed, so 100% means
+    // "usable" — never a prediction. The caller unmounts right after
+    // (dashboard replaces the loader).
     // Called from event handlers, never during render.
+    targetRef.current = 100
     setValue(100)
     return 100
   }
 
-  const stageLabel = stageLabelForValue(value)
+  const stageLabel =
+    typeof backendStage === "string" && backendStage.trim() !== ""
+      ? backendStage
+      : stageLabelForValue(value)
 
   return { showProgress, value, stageLabel, complete }
 }

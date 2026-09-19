@@ -3,13 +3,19 @@ import { Progress } from "@/components/ui/progress"
 import { useDelayedProgress } from "@/hooks/useDelayedProgress"
 
 /**
- * Phase K analysis loading state.
+ * Phase L analysis loading state.
  *
- * Smart spinner → progressive progress-bar experience:
+ * Smart spinner → backend-aware progress-bar experience (same card, same
+ * horizontal bar, same typography as Phase K — only the progress *source*
+ * changed):
  * - Fast operations: existing spinner only (never flashes the progress bar).
- * - Long operations (still running after ~800ms): promotes to an estimated
- *   staged progress bar that caps at 95% while waiting for the real API
- *   response, then the parent swaps to the dashboard (100% = complete).
+ * - Long operations (still running after ~800ms): promotes to a progress
+ *   bar driven by real backend milestones streamed over the same upload
+ *   request (file accepted → CSV parsed → analyzing columns → converting
+ *   records → assembling rows → response ready). The bar moves linearly
+ *   toward the latest milestone, never backward, and reaches exactly 100%
+ *   only once the parsed result is usable — no estimated easing, no
+ *   permanent 95% stall.
  *
  * Workspace-safe: `resetKey` must change per workspace upload (file identity
  * + wake timestamp) so timers never leak across workspaces. All timers live
@@ -21,10 +27,14 @@ export function AnalysisProgressState({
   label = "Analyzing your data…",
   resetKey = "",
   delayMs,
+  backendValue = null,
+  backendStage = null,
 }) {
   const { showProgress, value, stageLabel } = useDelayedProgress({
     active: true,
     resetKey,
+    backendValue,
+    backendStage,
     ...(delayMs != null ? { delayMs } : {}),
   })
 
@@ -43,7 +53,7 @@ export function AnalysisProgressState({
     )
   }
 
-  const rounded = Math.min(95, Math.floor(value))
+  const rounded = Math.min(100, Math.floor(value))
 
   return (
     <div
@@ -56,18 +66,18 @@ export function AnalysisProgressState({
         <Loader2 aria-hidden="true" className="size-5 shrink-0 animate-spin" />
         <p className="min-w-0 truncate text-sm font-medium">{label}</p>
       </div>
-      <Progress value={value} aria-label="Analysis progress (estimated)" />
+      <Progress value={value} aria-label="Analysis progress" />
       <div className="flex min-w-0 items-baseline justify-between gap-3">
         <p className="min-w-0 truncate text-xs text-muted-foreground sm:text-sm">
-          {stageLabel} — estimated, waiting for the server
+          {stageLabel}
         </p>
         <p className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
           {rounded}%
         </p>
       </div>
       <p className="sr-only">
-        Analysis in progress. Progress is estimated and caps at 95 percent
-        until the server responds.
+        Analysis in progress. Progress follows the server&apos;s reported
+        milestones and reaches 100 percent when the result is ready.
       </p>
     </div>
   )

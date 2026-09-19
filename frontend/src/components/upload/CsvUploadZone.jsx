@@ -14,6 +14,8 @@ export function CsvUploadZone({
   wakeStartedAt,
   selectedFile,
   dataset,
+  uploadProgress = null,
+  uploadStage = "",
   errorTitle,
   errorMessage,
   onFilesSelected,
@@ -145,6 +147,8 @@ export function CsvUploadZone({
             key={`${wakeStartedAt ?? ""}::${selectedFile?.name ?? ""}::${selectedFile?.size ?? ""}`}
             label={status === "analyzing" ? "Analyzing your data…" : "Uploading CSV…"}
             resetKey={`${wakeStartedAt ?? ""}::${selectedFile?.name ?? ""}::${selectedFile?.size ?? ""}`}
+            backendValue={uploadProgress}
+            backendStage={uploadStage}
           />
         ) : null}
 

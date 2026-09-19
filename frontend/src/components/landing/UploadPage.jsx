@@ -10,6 +10,8 @@ export function UploadPage({
   wakeStartedAt,
   selectedFile,
   dataset,
+  uploadProgress = null,
+  uploadStage = "",
   errorTitle,
   errorMessage,
   onFilesSelected,
@@ -84,6 +86,8 @@ export function UploadPage({
               wakeStartedAt={wakeStartedAt}
               selectedFile={selectedFile}
               dataset={dataset}
+              uploadProgress={uploadProgress}
+              uploadStage={uploadStage}
               errorTitle={errorTitle}
               errorMessage={errorMessage}
               onFilesSelected={onFilesSelected}

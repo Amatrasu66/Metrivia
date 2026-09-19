@@ -67,8 +67,11 @@ export function TetrisLoader({
   label = "Loading",
   className,
 }) {
-  const safeColumns = Math.max(4, Math.min(14, Math.floor(columns) || 10))
-  const safeRows = Math.max(4, Math.min(10, Math.floor(rows) || 6))
+  // Phase L: the backend wake card uses a substantially larger grid (up to
+  // 18–20 columns on desktop). Bounds only — the falling-piece algorithm
+  // below is untouched.
+  const safeColumns = Math.max(4, Math.min(20, Math.floor(columns) || 10))
+  const safeRows = Math.max(4, Math.min(12, Math.floor(rows) || 6))
   const safeCell = Math.max(8, Math.min(22, cellSize || 14))
   const safeGap = Math.max(1, Math.min(6, gap ?? 3))
   const safeSpeed = Math.max(120, Math.min(2000, speed || 450))
@@ -89,9 +92,9 @@ export function TetrisLoader({
 
   const animated = playing && !reduceMotion
 
-  // Grid shape is stable per mount (the wake card passes fixed 10×5); board
-  // state is initialized once. If the shape ever needs to change, the parent
-  // should remount via `key` for a fresh board.
+  // Grid shape is stable per mount; board state is initialized once. If the
+  // shape ever needs to change, the parent should remount via `key` for a
+  // fresh board.
   const [board, setBoard] = useState(() => emptyBoard(safeColumns, safeRows))
   const [pieceIndex, setPieceIndex] = useState(0)
   const [offset, setOffset] = useState(() => ({

@@ -34,6 +34,13 @@ export function initialWorkspaceState() {
     // idle | waking | wake-ready | uploading | analyzing | ready | error
     status: "idle",
     wakeStartedAt: null,
+    // Latest streamed backend milestone for the in-flight upload (Phase L):
+    // 0..90 while the server reports, exactly 100 once the parsed result is
+    // usable, null when no upload is running. Per-workspace so tab switches
+    // can never show another workspace's progress.
+    uploadProgress: null,
+    // Truthful backend label for `uploadProgress` (e.g. "Analyzing columns").
+    uploadStage: "",
     errorTitle: "",
     errorMessage: "",
     // Whether the error state may retry the preserved File.

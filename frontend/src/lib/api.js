@@ -253,3 +253,172 @@ export async function uploadCsv(file, { baseUrl, signal } = {}) {
   }
   return body
 }
+
+/**
+ * Phase L: POST /api/upload?stream=progress — same analysis as `uploadCsv`,
+ * but the backend streams real milestones (NDJSON `progress` events,
+ * ordered, monotonic, 0..90) followed by a `result-start` marker and the
+ * dataset JSON in one request. No job endpoint, no polling, no Redis, no
+ * WebSocket.
+ *
+ * - `onProgress({ value, stage, label })` fires once per backend milestone.
+ *   Values are clamped to 0..100 and decreasing values are ignored, so the
+ *   bar this feeds can never move backward even if a proxy ever reordered
+ *   chunks (the backend itself always sends ordered, monotonic events).
+ * - Browser upload transfer time reports nothing here on purpose: upload
+ *   bytes are not analysis progress, and the bar stays on the spinner /
+ *   last milestone until the backend actually starts reporting.
+ * - Resolves with the dataset only after the full result has been received
+ *   and parsed — callers set exactly 100% at that point, so 100% always
+ *   means "result usable", never a prediction.
+ * - Re-throws AbortError untouched (cancellation / workspace switch /
+ *   unmount). Listener errors from `onProgress` are swallowed so a UI
+ *   update can never break the upload.
+ * - Falls back to plain JSON when the body is not a stream (older backend
+ *   or a buffering proxy that collapsed it): resolves with the dataset and
+ *   reports no intermediate milestones rather than inventing any.
+ */
+export async function uploadCsvWithProgress(
+  file,
+  { baseUrl, signal, onProgress } = {},
+) {
+  const formData = new FormData()
+  formData.append("file", file, file?.name ?? "upload.csv")
+
+  let response
+  try {
+    response = await fetch(
+      `${resolveBaseUrl(baseUrl)}/api/upload?stream=progress`,
+      {
+        method: "POST",
+        body: formData,
+        signal,
+        headers: { Accept: "application/x-ndjson" },
+      },
+    )
+  } catch (err) {
+    if (err?.name === "AbortError") throw err
+    throw new ApiError(networkErrorMessage(), { isNetworkError: true })
+  }
+
+  const contentType = response.headers?.get?.("content-type") ?? ""
+  if (!contentType.includes("application/x-ndjson") || !response.body) {
+    const body = await parseJsonSafe(response)
+    if (!response.ok) {
+      const message =
+        body && typeof body.error === "string" && body.error.trim() !== ""
+          ? body.error
+          : `Upload failed (HTTP ${response.status}). Please try again.`
+      throw new ApiError(message, { status: response.status })
+    }
+    return body
+  }
+
+  const notify = (event) => {
+    if (typeof onProgress !== "function") return
+    try {
+      onProgress(event)
+    } catch {
+      // UI listener errors must not break the upload stream.
+    }
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let headerBuffer = ""
+  let resultStarted = false
+  const resultParts = []
+  let lastValue = 0
+  const emit = (value, stage, label) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return
+    const clamped = Math.min(100, Math.max(0, numeric))
+    if (clamped < lastValue) return
+    lastValue = clamped
+    notify({ value: clamped, stage, label })
+  }
+
+  try {
+    for (;;) {
+      if (signal?.aborted) {
+        try {
+          await reader.cancel()
+        } catch {
+          // Cancelling the reader is best-effort; the abort below wins.
+        }
+        throw createAbortError()
+      }
+      const { done, value } = await reader.read()
+      const text = decoder.decode(value ?? new Uint8Array(), {
+        stream: !done,
+      })
+      if (!resultStarted) {
+        headerBuffer += text
+        let newlineIndex = headerBuffer.indexOf("\n")
+        while (newlineIndex !== -1) {
+          const line = headerBuffer.slice(0, newlineIndex).trim()
+          headerBuffer = headerBuffer.slice(newlineIndex + 1)
+          if (line !== "") {
+            let event = null
+            try {
+              event = JSON.parse(line)
+            } catch {
+              event = null
+            }
+            if (event && event.type === "progress") {
+              emit(event.value, event.stage, event.label)
+            } else if (event && event.type === "error") {
+              const message =
+                typeof event.error === "string" && event.error.trim() !== ""
+                  ? event.error
+                  : "Failed to analyze the CSV file."
+              throw new ApiError(message, { status: event.status ?? null })
+            } else if (event && event.type === "result-start") {
+              resultStarted = true
+              // The remainder of the buffer (no literal newlines in the
+              // dataset JSON) is already result bytes.
+              if (headerBuffer !== "") {
+                resultParts.push(headerBuffer)
+                headerBuffer = ""
+              }
+              break
+            }
+            // Unknown line types are ignored so a future backend addition
+            // can never break result correctness.
+          }
+          if (resultStarted) break
+          newlineIndex = headerBuffer.indexOf("\n")
+        }
+      } else if (text !== "") {
+        resultParts.push(text)
+      }
+      if (done) break
+    }
+  } catch (err) {
+    if (err?.name === "AbortError") throw err
+    if (err instanceof ApiError) throw err
+    if (signal?.aborted) throw createAbortError()
+    throw new ApiError(networkErrorMessage(), { isNetworkError: true })
+  } finally {
+    try {
+      reader.releaseLock()
+    } catch {
+      // Release is best-effort after completion / cancellation.
+    }
+  }
+
+  if (!resultStarted) {
+    throw new ApiError("Upload failed. Please try again.")
+  }
+  const rawResult = resultParts.join("").trim()
+  let dataset
+  try {
+    dataset = JSON.parse(rawResult)
+  } catch {
+    throw new ApiError("Upload failed. Please try again.")
+  }
+  if (!dataset || typeof dataset !== "object") {
+    throw new ApiError("Upload failed. Please try again.")
+  }
+  return dataset
+}

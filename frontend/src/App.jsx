@@ -14,7 +14,11 @@ import { SettingsProvider } from "@/hooks/SettingsProvider"
 import { WorkspaceProvider } from "@/hooks/WorkspaceProvider"
 import { useWorkspaces } from "@/hooks/useWorkspaces"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
-import { ApiError, uploadCsv, waitForBackendHealthy } from "@/lib/api"
+import {
+  ApiError,
+  uploadCsvWithProgress,
+  waitForBackendHealthy,
+} from "@/lib/api"
 import { defaultChartConfig } from "@/lib/chart-data"
 import { defaultFilterState } from "@/lib/filter-data"
 import { validateCsvFile } from "@/lib/format"
@@ -333,6 +337,10 @@ function Shell() {
       fileName: keepFile ? target.fileName : null,
       fileSize: keepFile ? target.fileSize : 0,
       canRetry: keepFile,
+      // The progress bar unmounts with the error UI; clear the milestone so
+      // a later upload starts from a clean slate.
+      uploadProgress: null,
+      uploadStage: "",
     })
   }
 
@@ -379,6 +387,10 @@ function Shell() {
       canRetry: false,
       wakeStartedAt: Date.now(),
       status: "uploading",
+      // No backend milestone has arrived yet: 0 means "nothing reported",
+      // never a prediction. Milestones stream in via onProgress below.
+      uploadProgress: 0,
+      uploadStage: "Starting analysis",
     })
 
     let analyzingTimer = null
@@ -410,11 +422,36 @@ function Shell() {
         if (isCurrent()) updateWorkspace(targetId, { status: "analyzing" })
       }, ANALYZING_GRACE_MS)
 
-      const result = await uploadCsv(file, { signal })
+      // Phase L: the dataset streams with real backend milestones over
+      // this same request. Each milestone lands in the workspace that
+      // started the upload — a late event for a closed/switched workspace
+      // is dropped by isCurrent(), never shown elsewhere.
+      const result = await uploadCsvWithProgress(file, {
+        signal,
+        onProgress: (event) => {
+          if (!isCurrent()) return
+          const value = Number(event?.value)
+          if (!Number.isFinite(value)) return
+          updateWorkspace(targetId, {
+            uploadProgress: Math.min(100, Math.max(0, value)),
+            uploadStage:
+              typeof event?.label === "string" && event.label.trim() !== ""
+                ? event.label
+                : typeof event?.stage === "string"
+                  ? event.stage
+                  : "",
+          })
+        },
+      })
       if (!isCurrent()) return
-      // The response has arrived: make the analyzing stage explicit while
-      // the dashboard state is finalized so it can actually paint.
-      updateWorkspace(targetId, { status: "analyzing" })
+      // The result has been received AND parsed: exactly 100% is truthful
+      // now. Make the analyzing stage explicit while the dashboard state is
+      // finalized so it can actually paint.
+      updateWorkspace(targetId, {
+        status: "analyzing",
+        uploadProgress: 100,
+        uploadStage: "Complete",
+      })
       await delay(ANALYZING_MIN_VISIBLE_MS, signal)
       if (!isCurrent()) return
 
@@ -454,6 +491,8 @@ function Shell() {
         status: "error",
         errorTitle: UPLOAD_FAILED_TITLE,
         canRetry: false,
+        uploadProgress: null,
+        uploadStage: "",
         errorMessage:
           err instanceof ApiError
             ? err.message
@@ -544,6 +583,8 @@ function Shell() {
           wakeStartedAt={wakeStartedAt}
           selectedFile={selectedFile}
           dataset={dataset}
+          uploadProgress={activeWorkspace?.uploadProgress ?? null}
+          uploadStage={activeWorkspace?.uploadStage ?? ""}
           errorTitle={errorTitle}
           errorMessage={errorMessage}
           onFilesSelected={handleFilesSelected}
