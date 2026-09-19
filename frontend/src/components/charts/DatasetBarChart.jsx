@@ -45,11 +45,14 @@ export function DatasetBarChart({ dataset }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="min-w-0">
+      <div className="min-w-0 overflow-x-clip">
         <BarChart data={data} xDataKey={categoryKey}>
           <Grid horizontal />
           <Bar dataKey={numericKey} />
-          <BarXAxis />
+          {/* Phase J: same all-labels policy as BarChartView — Bklit
+              `showAllLabels` + `maxLabels={20}` on desktop, intentional
+              decimation on very narrow charts (see bar-x-axis.jsx). */}
+          <BarXAxis showAllLabels maxLabels={20} />
           <ChartTooltip />
         </BarChart>
       </div>
