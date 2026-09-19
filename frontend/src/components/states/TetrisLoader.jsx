@@ -58,7 +58,7 @@ function lockPiece(board, cells, ox, oy, color) {
 
 export function TetrisLoader({
   columns = 10,
-  rows = 6,
+  rows = 13,
   cellSize = 14,
   gap = 3,
   speed = 450,
