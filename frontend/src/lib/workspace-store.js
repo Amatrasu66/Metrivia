@@ -41,6 +41,12 @@ export function initialWorkspaceState() {
     uploadProgress: null,
     // Truthful backend label for `uploadProgress` (e.g. "Analyzing columns").
     uploadStage: "",
+    // Epoch ms when the current CSV analysis request actually began (set
+    // right before POST /api/upload?stream=progress is sent — never the
+    // backend-wake wait). Drives the 30s long-running Tetris fallback;
+    // null when no analysis request is in flight. Per-workspace so one
+    // workspace's timer can never affect another.
+    analysisStartedAt: null,
     errorTitle: "",
     errorMessage: "",
     // Whether the error state may retry the preserved File.

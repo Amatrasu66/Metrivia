@@ -9,6 +9,7 @@ import {
   wakeStageMessage,
 } from "@/lib/wake-stages"
 import { TetrisLoader } from "@/components/states/TetrisLoader"
+import { useWakeTetrisSize } from "@/lib/tetris-size"
 
 function StageDot({ done, active, reduceMotion }) {
   if (done) {
@@ -45,42 +46,6 @@ function StageDot({ done, active, reduceMotion }) {
       className="size-2 shrink-0 rounded-full border border-muted-foreground/50"
     />
   )
-}
-
-/**
- * Responsive Tetris dimensions for the wake card (placement/sizing only —
- * the Tetris implementation itself is untouched).
- *
- * - Desktop (≥1024px): 18 columns × 9 rows, 12px cells — substantially
- *   larger than the previous presentation.
- * - Tablet (640–1023px): 15 × 8, 10px cells.
- * - Mobile (<640px): 11 × 7, 8px cells, collapsing to a vertical layout.
- */
-function wakeTetrisSizeForWidth(width) {
-  if (width >= 1024) {
-    return { columns: 18, rows: 9, cellSize: 12, gap: 2 }
-  }
-  if (width >= 640) {
-    return { columns: 15, rows: 8, cellSize: 10, gap: 2 }
-  }
-  return { columns: 11, rows: 7, cellSize: 8, gap: 2 }
-}
-
-function useWakeTetrisSize() {
-  const [size, setSize] = useState(() =>
-    typeof window !== "undefined" && typeof window.innerWidth === "number"
-      ? wakeTetrisSizeForWidth(window.innerWidth)
-      : wakeTetrisSizeForWidth(1280),
-  )
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined
-    const onResize = () => {
-      setSize(wakeTetrisSizeForWidth(window.innerWidth))
-    }
-    window.addEventListener("resize", onResize)
-    return () => window.removeEventListener("resize", onResize)
-  }, [])
-  return size
 }
 
 /**

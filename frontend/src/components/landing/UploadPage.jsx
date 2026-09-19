@@ -12,6 +12,7 @@ export function UploadPage({
   dataset,
   uploadProgress = null,
   uploadStage = "",
+  analysisStartedAt = null,
   errorTitle,
   errorMessage,
   onFilesSelected,
@@ -88,6 +89,7 @@ export function UploadPage({
               dataset={dataset}
               uploadProgress={uploadProgress}
               uploadStage={uploadStage}
+              analysisStartedAt={analysisStartedAt}
               errorTitle={errorTitle}
               errorMessage={errorMessage}
               onFilesSelected={onFilesSelected}

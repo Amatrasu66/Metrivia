@@ -18,6 +18,14 @@
 //   T1  TetrisLoader contract (props, role, aria-busy/label, reduced motion)
 //   T2  Real tetris game on an rAF clock, themed via --tetris-* tokens
 //   T3  BackendWakeState two-column layout (large Tetris left, text right)
+//   F1  30s threshold is exactly 30_000 ms, request-aged (analysisStartedAt)
+//   F2  single-timeout handoff, cleaned up (no render loop, no polling)
+//   F3  Tetris fallback shows no percentage / progressbar (no fake progress)
+//   F4  request untouched: no second fetch, no abort/retry of the upload
+//   F5  workspace-safe plumbing (per-workspace timestamp, resetKey scope)
+//   F6  completion/error paths exit Tetris via the existing flows
+//   F7  fallback a11y (status, aria-busy, sr text, reduced motion intact)
+//   F8  fallback reuses the shared Tetris sizing conventions
 //
 // Usage:  npm run loading:test   (from frontend/)
 // Exit code is non-zero on any failure.
@@ -360,16 +368,99 @@ try {
       src.includes("overflow-hidden") &&
       src.includes("max-w-full"),
   );
+  const sizing = srcFile("lib/tetris-size.js");
   check(
     "T3e large responsive Tetris (desktop/tablet/mobile sizes)",
-    src.includes("columns: 18") &&
-      src.includes("columns: 15") &&
-      src.includes("columns: 11") &&
-      src.includes("cellSize: 12") &&
-      src.includes("cellSize: 10") &&
-      src.includes("cellSize: 8") &&
+    sizing.includes("columns: 18") &&
+      sizing.includes("columns: 15") &&
+      sizing.includes("columns: 11") &&
+      sizing.includes("cellSize: 12") &&
+      sizing.includes("cellSize: 10") &&
+      sizing.includes("cellSize: 8") &&
       src.includes("speed={40}") &&
-      src.includes("resize"),
+      src.includes("useWakeTetrisSize") &&
+      sizing.includes("resize"),
+  );
+}
+
+// --- F: 30s long-running Tetris fallback -------------------------------------------
+{
+  const analysis = srcFile("components/upload/AnalysisProgressState.jsx");
+  const fallback = srcFile("components/upload/AnalysisTetrisState.jsx");
+  const zone = srcFile("components/upload/CsvUploadZone.jsx");
+  const page = srcFile("components/landing/UploadPage.jsx");
+  const app = srcFile("App.jsx");
+  const store = srcFile("lib/workspace-store.js");
+  check(
+    "F1 threshold is exactly 30s, aged from the analysis request start",
+    progressLib?.LONG_RUNNING_MS === 30_000 &&
+      analysis.includes("LONG_RUNNING_MS") &&
+      analysis.includes("analysisStartedAt") &&
+      analysis.includes("Date.now() - analysisStartedAt") &&
+      store.includes("analysisStartedAt: null") &&
+      app.includes("analysisStartedAt: Date.now()"),
+    `LONG_RUNNING_MS=${progressLib?.LONG_RUNNING_MS}`,
+  );
+  check(
+    "F2 single-timeout handoff with cleanup (no render loop, no polling)",
+    analysis.includes("setTimeout(") &&
+      analysis.includes("clearTimeout(timer)") &&
+      analysis.includes("[analysisStartedAt, resetKey]") &&
+      !analysis.includes("setInterval") &&
+      fallback.includes("setInterval") &&
+      app.includes("analysisStartedAt: null"),
+  );
+  const fallbackCode = fallback
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|\s)\/\/.*$/gm, "$1");
+  check(
+    "F3 fallback shows no percentage or progressbar (no fake progress)",
+    analysis.includes("AnalysisTetrisState") &&
+      analysis.includes("backendValue !== 100") &&
+      !fallbackCode.includes("Progress") &&
+      !fallbackCode.includes("progressbar") &&
+      !fallbackCode.includes("}%") &&
+      !fallbackCode.includes(" percent") &&
+      !fallbackCode.includes("useDelayedProgress"),
+  );
+  check(
+    "F4 request untouched: no second fetch, abort, retry, or new endpoint",
+    !fallback.includes("fetch(") &&
+      !fallback.includes("uploadCsv") &&
+      !fallback.includes("AbortController") &&
+      !fallback.includes("axios") &&
+      analysis.includes("backendValue") &&
+      app.includes("uploadCsvWithProgress"),
+  );
+  check(
+    "F5 workspace-safe: per-workspace timestamp, resetKey-scoped timer",
+    zone.includes("analysisStartedAt") &&
+      page.includes("analysisStartedAt") &&
+      app.includes("activeWorkspace?.analysisStartedAt") &&
+      analysis.includes("resetKey"),
+  );
+  check(
+    "F6 completion/error exit via existing flows (no second error system)",
+    !fallback.includes("ErrorState") &&
+      !fallback.includes("onRetry") &&
+      zone.includes('status === "error"') &&
+      app.includes("analysisStartedAt: null"),
+  );
+  check(
+    "F7 fallback a11y: status + busy, sr text, no live-region spam",
+    fallback.includes('role="status"') &&
+      fallback.includes('aria-busy="true"') &&
+      fallback.includes("sr-only") &&
+      fallback.includes('aria-hidden="true"') &&
+      fallback.includes("TetrisLoader") &&
+      !fallback.includes("aria-live"),
+  );
+  check(
+    "F8 fallback reuses shared Tetris sizing (wake conventions untouched)",
+    fallback.includes("useWakeTetrisSize") &&
+      fallback.includes("lib/tetris-size") &&
+      srcFile("components/states/BackendWakeState.jsx").includes("useWakeTetrisSize") &&
+      !fallback.includes("generateTetrisFrames"),
   );
 }
 

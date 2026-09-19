@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
-import { useDelayedProgress } from "@/hooks/useDelayedProgress"
+import { LONG_RUNNING_MS, useDelayedProgress } from "@/hooks/useDelayedProgress"
+import { AnalysisTetrisState } from "@/components/upload/AnalysisTetrisState"
 
 /**
  * Phase L analysis loading state.
@@ -16,10 +18,15 @@ import { useDelayedProgress } from "@/hooks/useDelayedProgress"
  *   toward the latest milestone, never backward, and reaches exactly 100%
  *   only once the parsed result is usable — no estimated easing, no
  *   permanent 95% stall.
+ * - Very long operations (same request still pending after LONG_RUNNING_MS):
+ *   the card hands off to AnalysisTetrisState — presentation only, the
+ *   request continues untouched and completion/error unmount this component
+ *   exactly as before. No percentage is shown alongside Tetris.
  *
  * Workspace-safe: `resetKey` must change per workspace upload (file identity
  * + wake timestamp) so timers never leak across workspaces. All timers live
- * in `useDelayedProgress` and are cancelled on unmount / status change.
+ * in `useDelayedProgress` plus the single handoff timeout below, and are
+ * cancelled on unmount / status change / `analysisStartedAt` change.
  * Error UI is owned by the parent — on failure this component simply
  * unmounts (no progress left behind).
  */
@@ -29,6 +36,7 @@ export function AnalysisProgressState({
   delayMs,
   backendValue = null,
   backendStage = null,
+  analysisStartedAt = null,
 }) {
   const { showProgress, value, stageLabel } = useDelayedProgress({
     active: true,
@@ -37,6 +45,39 @@ export function AnalysisProgressState({
     backendStage,
     ...(delayMs != null ? { delayMs } : {}),
   })
+
+  // Long-running handoff: a single timeout for the remainder of the 30s
+  // window measured from the actual request start (clamped at 0 so an
+  // already-expired window flips on the next tick). New uploads remount via
+  // `key={resetKey}` for inherently fresh state; timestamp changes and
+  // unmounts (completion, error, workspace close/switch) restart or clear
+  // it. No render loop, no polling.
+  const [showTetris, setShowTetris] = useState(
+    () =>
+      typeof analysisStartedAt === "number" &&
+      Date.now() - analysisStartedAt >= LONG_RUNNING_MS,
+  )
+  useEffect(() => {
+    if (typeof analysisStartedAt !== "number") return undefined
+    const remaining = Math.max(
+      0,
+      LONG_RUNNING_MS - (Date.now() - analysisStartedAt),
+    )
+    let cancelled = false
+    const timer = setTimeout(() => {
+      if (!cancelled) setShowTetris(true)
+    }, remaining)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [analysisStartedAt, resetKey])
+
+  // A usable result arrived (parent sets exactly 100 on parsed data): never
+  // flash Tetris on the way out — the dashboard takes over from here.
+  if (showTetris && backendValue !== 100) {
+    return <AnalysisTetrisState analysisStartedAt={analysisStartedAt} />
+  }
 
   if (!showProgress) {
     return (

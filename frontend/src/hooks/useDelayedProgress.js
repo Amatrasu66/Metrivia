@@ -33,6 +33,11 @@ export const PROGRESS_CAP = 99
 export const PROGRESS_MIN_VISIBLE_MS = 400
 export const PROGRESS_SMOOTH_INTERVAL_MS = 100
 export const PROGRESS_LINEAR_RATE_PER_SEC = 50
+// Long-running CSV fallback: once the SAME analysis request has been
+// pending this long, the progress card hands off to the Tetris loading
+// state (presentation only — the request continues untouched). Consumed by
+// AnalysisProgressState's single-timeout switch.
+export const LONG_RUNNING_MS = 30_000
 
 export function stageLabelForValue(value) {
   if (value < 5) return "Starting analysis"

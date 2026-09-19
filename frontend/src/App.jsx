@@ -341,6 +341,7 @@ function Shell() {
       // a later upload starts from a clean slate.
       uploadProgress: null,
       uploadStage: "",
+      analysisStartedAt: null,
     })
   }
 
@@ -389,8 +390,10 @@ function Shell() {
       status: "uploading",
       // No backend milestone has arrived yet: 0 means "nothing reported",
       // never a prediction. Milestones stream in via onProgress below.
+      // No analysis request is in flight yet either (backend wake first).
       uploadProgress: 0,
       uploadStage: "Starting analysis",
+      analysisStartedAt: null,
     })
 
     let analyzingTimer = null
@@ -414,7 +417,13 @@ function Shell() {
         await delay(WAKE_SUCCESS_MS, signal)
         if (!isCurrent()) return
       }
-      updateWorkspace(targetId, { status: "uploading" })
+      // The CSV analysis request clock starts here — after any backend
+      // wake, immediately before POST /api/upload?stream=progress is sent.
+      // Drives the 30s long-running Tetris fallback (presentation only).
+      updateWorkspace(targetId, {
+        status: "uploading",
+        analysisStartedAt: Date.now(),
+      })
 
       // While the upload request is pending, a slow response almost always
       // means the backend has the file and Pandas is analyzing it.
@@ -451,6 +460,7 @@ function Shell() {
         status: "analyzing",
         uploadProgress: 100,
         uploadStage: "Complete",
+        analysisStartedAt: null,
       })
       await delay(ANALYZING_MIN_VISIBLE_MS, signal)
       if (!isCurrent()) return
@@ -493,6 +503,7 @@ function Shell() {
         canRetry: false,
         uploadProgress: null,
         uploadStage: "",
+        analysisStartedAt: null,
         errorMessage:
           err instanceof ApiError
             ? err.message
@@ -585,6 +596,7 @@ function Shell() {
           dataset={dataset}
           uploadProgress={activeWorkspace?.uploadProgress ?? null}
           uploadStage={activeWorkspace?.uploadStage ?? ""}
+          analysisStartedAt={activeWorkspace?.analysisStartedAt ?? null}
           errorTitle={errorTitle}
           errorMessage={errorMessage}
           onFilesSelected={handleFilesSelected}
