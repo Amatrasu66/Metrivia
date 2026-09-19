@@ -33,6 +33,18 @@
   --chart-3: oklch(0.9310 0 0);
   --chart-4: oklch(0.9367 0.0523 75.5009);
   --chart-5: oklch(0.4338 0.0437 41.6746);
+  /* Tetris loader pieces resolve through the active theme: every theme
+     overrides the chart/primary tokens below, so the wake-up game follows
+     light/dark mode and the theme catalog with no separate palette. */
+  --tetris-1: var(--chart-1);
+  --tetris-2: var(--chart-2);
+  --tetris-3: var(--chart-3);
+  --tetris-4: var(--chart-4);
+  --tetris-5: var(--chart-5);
+  --tetris-6: var(--primary);
+  --tetris-7: var(--secondary);
+  --tetris-flash: var(--foreground);
+  --tetris-dead: color-mix(in oklab, var(--foreground) 45%, transparent);
   --radius: 0.5rem;
   --sidebar: oklch(0.9881 0 0);
   --sidebar-foreground: oklch(0.2645 0 0);
@@ -201,6 +213,16 @@
   --chart-3: oklch(0.2850 0 0);
   --chart-4: oklch(0.3481 0.0219 67.0001);
   --chart-5: oklch(0.9245 0.0533 67.0855);
+  /* Tetris loader pieces resolve through the active theme (see :root). */
+  --tetris-1: var(--chart-1);
+  --tetris-2: var(--chart-2);
+  --tetris-3: var(--chart-3);
+  --tetris-4: var(--chart-4);
+  --tetris-5: var(--chart-5);
+  --tetris-6: var(--primary);
+  --tetris-7: var(--secondary);
+  --tetris-flash: var(--foreground);
+  --tetris-dead: color-mix(in oklab, var(--foreground) 45%, transparent);
   --sidebar: oklch(0.2103 0.0059 285.8852);
   --sidebar-foreground: oklch(0.9674 0.0013 286.3752);
   --sidebar-primary: oklch(0.4882 0.2172 264.3763);

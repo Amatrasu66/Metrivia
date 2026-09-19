@@ -1,223 +1,204 @@
-import { useEffect, useMemo, useState } from "react"
-import { cn } from "@/lib/utils"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
+import { generateTetrisFrames } from "@/lib/tetris-frames";
+
+/* -------------------------------------------------------------------------- */
+/*                                  component                                 */
+/* -------------------------------------------------------------------------- */
 
 /**
- * Phase K Tetris backend wake-up visual.
- *
- * Lightweight Tetris loader: a small theme-colored tetromino falls on a
- * muted grid, locks, and the next piece spawns. Pure presentation — it never
- * represents backend percentage; the parent card owns elapsed time and
- * Connecting / Starting server / Ready stages.
- *
- * Props mirror the supplied component contract:
- * - columns / rows / cellSize / gap / speed / playing / loop / label
- * - `role="status"` + `aria-busy` semantics
- * - `prefers-reduced-motion` renders a static settled pattern (no timers).
- *
- * Theme: only Metrivia CSS variables (`--primary`, `--chart-*`, `--muted`,
- * `--border`) — no new palette. No animation library; a single interval.
+ * I, O, T, S, Z, J, L. Each one reads a theme variable, so a light and a dark
+ * board get their own shade; the literal after the comma keeps the component
+ * working on its own, without the stylesheet.
  */
+const PALETTE = [
+    "var(--tetris-1, oklch(0.797 0.134 211.5))",
+    "var(--tetris-2, oklch(0.861 0.173 91.9))",
+    "var(--tetris-3, oklch(0.709 0.159 293.5))",
+    "var(--tetris-4, oklch(0.800 0.182 151.7))",
+    "var(--tetris-5, oklch(0.711 0.166 22.2))",
+    "var(--tetris-6, oklch(0.714 0.143 254.6))",
+    "var(--tetris-7, oklch(0.758 0.159 55.9))",
+];
 
-const TETROMINOES = [
-  { cells: [[0, 0], [1, 0], [2, 0], [3, 0]], color: "var(--chart-1)" },
-  { cells: [[0, 0], [1, 0], [0, 1], [1, 1]], color: "var(--chart-2)" },
-  { cells: [[0, 0], [1, 0], [2, 0], [1, 1]], color: "var(--primary)" },
-  { cells: [[0, 0], [0, 1], [0, 2], [1, 2]], color: "var(--chart-4)" },
-  { cells: [[1, 0], [1, 1], [1, 2], [0, 2]], color: "var(--chart-5)" },
-  { cells: [[1, 0], [2, 0], [0, 1], [1, 1]], color: "var(--chart-3)" },
-  { cells: [[0, 0], [1, 0], [1, 1], [2, 1]], color: "var(--secondary)" },
-]
+/** A number is read as pixels; a string goes through as written, `0.4em` and all. */
+const size = (value) => (typeof value === "number" ? `${value}px` : value);
 
-function emptyBoard(columns, rows) {
-  return Array.from({ length: rows }, () => Array(columns).fill(null))
+/** True while the reader asks for less movement. */
+function useReducedMotion() {
+    const [reduced, setReduced] = useState(false);
+
+    useEffect(() => {
+        const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+        const read = () => setReduced(query.matches);
+        read();
+        query.addEventListener("change", read);
+        return () => query.removeEventListener("change", read);
+    }, []);
+
+    return reduced;
 }
 
-function canPlace(board, cells, ox, oy) {
-  const rows = board.length
-  const cols = board[0]?.length ?? 0
-  for (const [dx, dy] of cells) {
-    const x = ox + dx
-    const y = oy + dy
-    if (x < 0 || x >= cols || y < 0 || y >= rows) return false
-    if (board[y][x] != null) return false
-  }
-  return true
-}
-
-function lockPiece(board, cells, ox, oy, color) {
-  const next = board.map((row) => [...row])
-  for (const [dx, dy] of cells) {
-    const x = ox + dx
-    const y = oy + dy
-    if (y >= 0 && y < next.length && x >= 0 && x < next[0].length) {
-      next[y][x] = color
-    }
-  }
-  return next
-}
-
+/**
+ * A loading indicator that plays tetris. A bot stacks the pieces, clears the
+ * lines, and eventually tops out — then the board wipes and a new game starts.
+ * Readers who ask for less movement get one still board instead.
+ *
+ * Props:
+ * - `columns` (default `8`, minimum `4`), `rows` (default `16`, minimum `6`)
+ * - `cellSize` (default `6`), `gap` (default `2`) — numbers read as pixels
+ * - `speed` (default `40`, ms per frame), `playing` (default `true`),
+ *   `loop` (default `true`), `onComplete`, `label` (default `"Loading"`),
+ *   `colors`, `flashColor`, `deadColor`, `dotClassName`, plus `className`,
+ *   `style`, and remaining DOM props.
+ */
 export function TetrisLoader({
-  columns = 10,
-  rows = 13,
-  cellSize = 14,
-  gap = 3,
-  speed = 450,
-  playing = true,
-  loop = true,
-  label = "Loading",
-  className,
+    columns = 8,
+    rows = 16,
+    cellSize = 6,
+    gap = 2,
+    speed = 40,
+    playing = true,
+    loop = true,
+    onComplete,
+    label = "Loading",
+    colors = PALETTE,
+    flashColor = "var(--tetris-flash, var(--foreground, currentColor))",
+    deadColor = "var(--tetris-dead, color-mix(in oklab, var(--foreground, currentColor) 45%, transparent))",
+    dotClassName,
+    className,
+    style,
+    ...props
 }) {
-  // Phase L: the backend wake card uses a substantially larger grid (up to
-  // 18–20 columns on desktop). Bounds only — the falling-piece algorithm
-  // below is untouched.
-  const safeColumns = Math.max(4, Math.min(20, Math.floor(columns) || 10))
-  const safeRows = Math.max(4, Math.min(12, Math.floor(rows) || 6))
-  const safeCell = Math.max(8, Math.min(22, cellSize || 14))
-  const safeGap = Math.max(1, Math.min(6, gap ?? 3))
-  const safeSpeed = Math.max(120, Math.min(2000, speed || 450))
+    const width = Math.max(4, Math.round(columns));
+    const height = Math.max(6, Math.round(rows));
 
-  const [reduceMotion, setReduceMotion] = useState(() =>
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : false,
-  )
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)")
-    const onChange = (event) => setReduceMotion(event.matches)
-    query.addEventListener?.("change", onChange)
-    return () => query.removeEventListener?.("change", onChange)
-  }, [])
+    const gridRef = useRef(null);
+    const frame = useRef(0);
 
-  const animated = playing && !reduceMotion
+    const reduced = useReducedMotion();
+    const [round, setRound] = useState(0);
+    // Memoized (not state-in-effect): a fresh game per size/round, generated
+    // on the client so the server and the first paint agree. `round` is
+    // read so each loop restarts play from a fresh deal.
+    const game = useMemo(() => {
+        void round;
+        return generateTetrisFrames(width, height);
+    }, [width, height, round]);
+    useEffect(() => {
+        frame.current = 0;
+    }, [width, height, round]);
 
-  // Grid shape is stable per mount; board state is initialized once. If the
-  // shape ever needs to change, the parent should remount via `key` for a
-  // fresh board.
-  const [board, setBoard] = useState(() => emptyBoard(safeColumns, safeRows))
-  const [pieceIndex, setPieceIndex] = useState(0)
-  const [offset, setOffset] = useState(() => ({
-    x: Math.max(0, Math.floor(safeColumns / 2) - 1),
-    y: 0,
-  }))
+    // Held in a ref so an inline callback does not restart the animation.
+    const completeRef = useRef(onComplete);
+    useEffect(() => {
+        completeRef.current = onComplete;
+    });
 
-  useEffect(() => {
-    if (!animated) return undefined
-    const id = setInterval(() => {
-      setBoard((prevBoard) => {
-        const piece = TETROMINOES[pieceIndex % TETROMINOES.length]
-        let ox = offset.x
-        let oy = offset.y
-        // Keep the spawn inside the board for narrow grids.
-        const maxDx = Math.max(...piece.cells.map(([dx]) => dx))
-        ox = Math.min(ox, safeColumns - maxDx - 1)
-        if (canPlace(prevBoard, piece.cells, ox, oy + 1)) {
-          setOffset({ x: ox, y: oy + 1 })
-          return prevBoard
+    const paint = useCallback(
+        (dots, index) => {
+            const board = game?.[index];
+            if (!board) return;
+
+            dots.forEach((dot, i) => {
+                const value = board[i] ?? 0;
+                dot.style.backgroundColor = value ? `var(--tetris-cell-${value})` : "";
+            });
+        },
+        [game],
+    );
+
+    useEffect(() => {
+        if (!game) return;
+
+        const grid = gridRef.current;
+        if (!grid) return;
+        const dots = Array.from(grid.children);
+
+        if (frame.current >= game.length) frame.current = 0;
+
+        // One still board, a good way in, for anyone who asked for less movement.
+        if (reduced) {
+            paint(dots, Math.floor(game.length * 0.55));
+            return;
         }
-        // Lock the piece.
-        let next = lockPiece(prevBoard, piece.cells, ox, oy, piece.color)
-        const filled = next.flat().filter(Boolean).length
-        const boardFull = filled >= safeColumns * safeRows * 0.55
-        if (boardFull) {
-          next = loop ? emptyBoard(safeColumns, safeRows) : next
-          if (!loop) {
-            clearInterval(id)
-          }
-        }
-        const nextIndex = pieceIndex + 1
-        const nextPiece = TETROMINOES[nextIndex % TETROMINOES.length]
-        const spawnX = Math.max(
-          0,
-          Math.min(Math.floor(safeColumns / 2) - 1, safeColumns - 2),
-        )
-        setPieceIndex(nextIndex)
-        setOffset({ x: spawnX, y: 0 })
-        // If the spawn is blocked and looping, clear instead of jamming.
-        if (!canPlace(next, nextPiece.cells, spawnX, 0) && loop) {
-          return emptyBoard(safeColumns, safeRows)
-        }
-        return next
-      })
-    }, safeSpeed)
-    return () => clearInterval(id)
-  }, [animated, safeSpeed, safeColumns, safeRows, loop, pieceIndex, offset.x, offset.y])
 
-  const activeCells = useMemo(() => {
-    if (!animated) return new Map()
-    const piece = TETROMINOES[pieceIndex % TETROMINOES.length]
-    const map = new Map()
-    for (const [dx, dy] of piece.cells) {
-      const x = Math.min(offset.x, safeColumns - 1) + dx
-      const y = offset.y + dy
-      if (x >= 0 && x < safeColumns && y >= 0 && y < safeRows) {
-        map.set(`${x}:${y}`, piece.color)
-      }
-    }
-    return map
-  }, [animated, pieceIndex, offset, safeColumns, safeRows])
+        paint(dots, frame.current);
+        if (!playing) return;
 
-  // Reduced-motion / paused: a static settled pattern, no timers running.
-  const staticBoard = useMemo(() => {
-    if (animated) return null
-    const next = emptyBoard(safeColumns, safeRows)
-    const bottom = safeRows - 1
-    for (let x = 0; x < safeColumns; x += 1) {
-      if (x % 3 !== 2) next[bottom][x] = "var(--chart-1)"
-      if (x % 4 === 0 && safeRows > 1) next[bottom - 1][x] = "var(--chart-4)"
-    }
-    const cx = Math.floor(safeColumns / 2) - 1
-    if (cx >= 0 && cx + 2 < safeColumns && safeRows > 3) {
-      next[1][cx] = "var(--primary)"
-      next[1][cx + 1] = "var(--primary)"
-      next[1][cx + 2] = "var(--primary)"
-      next[2][cx + 1] = "var(--primary)"
-    }
-    return next
-  }, [animated, safeColumns, safeRows])
+        // A clock, not a timer: a background tab freezes the game instead of
+        // banking up frames it has to rush through on the way back.
+        let request = 0;
+        let last = performance.now();
+        let owed = 0;
 
-  const renderBoard = animated ? board : staticBoard ?? board
+        const tick = (now) => {
+            owed += now - last;
+            last = now;
+            if (owed > speed * 4) owed = speed;
 
-  return (
-    <div
-      role="status"
-      aria-busy={animated ? "true" : "false"}
-      aria-label={label}
-      className={cn("flex min-w-0 max-w-full justify-center overflow-hidden", className)}
-    >
-      <div
-        aria-hidden="true"
-        className="grid shrink-0"
-        style={{
-          gridTemplateColumns: `repeat(${safeColumns}, ${safeCell}px)`,
-          gap: `${safeGap}px`,
-        }}
-      >
-        {renderBoard.map((row, y) =>
-          row.map((filled, x) => {
-            const active = activeCells.get(`${x}:${y}`)
-            const color = active ?? filled
-            return (
-              <span
-                key={`${x}:${y}`}
-                style={{
-                  width: safeCell,
-                  height: safeCell,
-                  borderRadius: 3,
-                  background: color ?? "var(--muted)",
-                  opacity: color ? 1 : 0.55,
-                  border: color ? "none" : "1px solid var(--border)",
-                  boxSizing: "border-box",
-                }}
-              />
-            )
-          }),
-        )}
-      </div>
-      <span className="sr-only">{label}</span>
-    </div>
-  )
+            let ended = false;
+            while (owed >= speed) {
+                owed -= speed;
+                frame.current++;
+                if (frame.current >= game.length) {
+                    ended = true;
+                    break;
+                }
+            }
+
+            paint(dots, Math.min(frame.current, game.length - 1));
+
+            if (!ended) {
+                request = requestAnimationFrame(tick);
+                return;
+            }
+
+            completeRef.current?.();
+            // A new round replaces the frames, which restarts this effect.
+            if (loop) setRound((r) => r + 1);
+            else frame.current = game.length - 1;
+        };
+
+        request = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(request);
+    }, [game, playing, speed, loop, paint, reduced]);
+
+    const vars = {
+        "--tetris-cell": size(cellSize),
+        "--tetris-gap": size(gap),
+        "--tetris-cell-8": flashColor,
+        "--tetris-cell-9": deadColor,
+    };
+    for (let i = 0; i < 7; i++) vars[`--tetris-cell-${i + 1}`] = colors[i] ?? PALETTE[i];
+
+    return (
+        <div
+            ref={gridRef}
+            role="status"
+            aria-label={label}
+            aria-busy={playing && !reduced}
+            className={cn("grid w-fit", className)}
+            style={
+                {
+                    gridTemplateColumns: `repeat(${width}, var(--tetris-cell))`,
+                    gap: "var(--tetris-gap)",
+                    ...vars,
+                    ...style,
+                }
+            }
+            {...props}
+        >
+            {Array.from({ length: width * height }).map((_, i) => (
+                <div
+                    key={i}
+                    style={{ height: "var(--tetris-cell)", borderRadius: "calc(var(--tetris-cell) / 3)" }}
+                    className={cn("bg-foreground/10", dotClassName)}
+                />
+            ))}
+        </div>
+    );
 }
 
-export default TetrisLoader
+export default TetrisLoader;

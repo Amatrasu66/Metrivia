@@ -15,8 +15,8 @@
 //   L7  smallest reliable architecture: same-request NDJSON stream — no
 //       Redis/Celery/DB/WebSocket, no job/poll endpoint
 //   L8  progress protocol: ordered, monotonic, bounded, linear smoothing
-//   T1  TetrisLoader contract (props, role, aria-busy, reduced motion)
-//   T2  Tetris uses theme vars, stays lightweight, clips layout
+//   T1  TetrisLoader contract (props, role, aria-busy/label, reduced motion)
+//   T2  Real tetris game on an rAF clock, themed via --tetris-* tokens
 //   T3  BackendWakeState two-column layout (large Tetris left, text right)
 //
 // Usage:  npm run loading:test   (from frontend/)
@@ -259,46 +259,73 @@ try {
       src.includes("speed") &&
       src.includes("playing") &&
       src.includes("loop") &&
-      src.includes("label"),
+      src.includes("onComplete") &&
+      src.includes("label") &&
+      src.includes("colors") &&
+      src.includes("flashColor") &&
+      src.includes("deadColor") &&
+      src.includes("dotClassName") &&
+      src.includes("className") &&
+      src.includes("...props"),
   );
   check(
     "T1b loader exposes status + busy semantics",
-    src.includes('role="status"') && src.includes("aria-busy"),
+    src.includes('role="status"') &&
+      src.includes("aria-busy") &&
+      src.includes("aria-label"),
   );
   check(
-    "T1c reduced-motion renders a static pattern (no timers)",
+    "T1c reduced-motion renders one still board (no animation clock)",
     src.includes("prefers-reduced-motion") &&
-      src.includes("reduceMotion") &&
-      src.includes("clearInterval"),
+      src.includes("useReducedMotion") &&
+      src.includes("still board") &&
+      src.includes("cancelAnimationFrame"),
   );
 }
 
 // --- T2: theme + weight + layout --------------------------------------------------------
 {
   const src = srcFile("components/states/TetrisLoader.jsx");
+  const css = srcFile("index.css");
   check(
-    "T2a Tetris uses Metrivia theme vars (no new palette)",
-    src.includes("var(--primary)") &&
-      src.includes("var(--chart-") &&
-      src.includes("var(--muted)") &&
+    "T2a Tetris resolves through Metrivia theme vars (no new palette)",
+    src.includes("var(--tetris-") &&
+      src.includes("bg-foreground/10") &&
       !src.includes("#ff") &&
-      !src.includes("rgb("),
+      !src.includes("rgb(") &&
+      css.includes("--tetris-1: var(--chart-1)") &&
+      css.includes("--tetris-5: var(--chart-5)") &&
+      css.includes("--tetris-6: var(--primary)") &&
+      css.includes("--tetris-7: var(--secondary)") &&
+      css.includes("--tetris-flash: var(--foreground)"),
   );
   check(
-    "T2b loader is lightweight (single interval, no motion lib)",
-    src.includes("setInterval") &&
+    "T2b loader plays real tetris on an rAF clock (no motion lib, no timers)",
+    src.includes("generateTetrisFrames") &&
+      src.includes("requestAnimationFrame") &&
+      src.includes("cancelAnimationFrame") &&
+      !src.includes("setInterval") &&
       !src.includes("motion/react") &&
       !src.includes("framer-motion"),
   );
+  const frames = srcFile("lib/tetris-frames.js");
   check(
-    "T2c no layout overflow (bounded, centered, non-blocking)",
-    src.includes("overflow-hidden") &&
-      src.includes("max-w-full") &&
-      src.includes("justify-center"),
+    "T2c game logic intact (AI landing, line clears, game over, loop)",
+    frames.includes("seven-bag") &&
+      frames.includes("fullRows") &&
+      frames.includes("collapse") &&
+      frames.includes("Game over") &&
+      frames.includes("generateTetrisFrames") &&
+      src.includes("setRound") &&
+      src.includes("completeRef") &&
+      src.includes("generateTetrisFrames"),
   );
   check(
-    "T2d Tetris allows the large wake grid (up to 20 columns)",
-    src.includes("Math.min(20,") && !src.includes("Math.min(14,"),
+    "T2d loader grid is bounded and never compressed",
+    src.includes("w-fit") &&
+      src.includes("gridTemplateColumns") &&
+      !src.includes("scale-") &&
+      !src.includes("transform:"),
   );
 }
 
@@ -338,6 +365,10 @@ try {
     src.includes("columns: 18") &&
       src.includes("columns: 15") &&
       src.includes("columns: 11") &&
+      src.includes("cellSize: 12") &&
+      src.includes("cellSize: 10") &&
+      src.includes("cellSize: 8") &&
+      src.includes("speed={40}") &&
       src.includes("resize"),
   );
 }

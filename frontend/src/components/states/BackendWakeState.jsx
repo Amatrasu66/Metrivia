@@ -49,19 +49,19 @@ function StageDot({ done, active, reduceMotion }) {
 
 /**
  * Responsive Tetris dimensions for the wake card (placement/sizing only —
- * the Tetris algorithm itself is untouched).
+ * the Tetris implementation itself is untouched).
  *
  * - Desktop (≥1024px): 18 columns × 9 rows, 12px cells — substantially
- *   larger than the previous 10×5 presentation.
+ *   larger than the previous presentation.
  * - Tablet (640–1023px): 15 × 8, 10px cells.
  * - Mobile (<640px): 11 × 7, 8px cells, collapsing to a vertical layout.
  */
 function wakeTetrisSizeForWidth(width) {
   if (width >= 1024) {
-    return { columns: 18, rows: 9, cellSize: 12, gap: 3 }
+    return { columns: 18, rows: 9, cellSize: 12, gap: 2 }
   }
   if (width >= 640) {
-    return { columns: 15, rows: 8, cellSize: 10, gap: 3 }
+    return { columns: 15, rows: 8, cellSize: 10, gap: 2 }
   }
   return { columns: 11, rows: 7, cellSize: 8, gap: 2 }
 }
@@ -153,10 +153,10 @@ export function BackendWakeState({ startedAt, phase = "waking" }) {
             rows={tetrisSize.rows}
             cellSize={tetrisSize.cellSize}
             gap={tetrisSize.gap}
-            speed={420}
+            speed={40}
             playing
             loop
-            label="Backend is starting, Tetris blocks falling"
+            label="Starting Metrivia's backend"
           />
         )}
       </span>
