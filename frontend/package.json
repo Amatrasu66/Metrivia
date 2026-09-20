@@ -17,6 +17,7 @@
     "loading:test": "node ./scripts/loading-progress-test.mjs",
     "pagination:test": "node ./scripts/dataset-pagination-test.mjs",
     "filtering:test": "node ./scripts/dataset-filtering-test.mjs",
+    "chart:test": "node ./scripts/dataset-chart-test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

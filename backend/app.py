@@ -48,6 +48,11 @@ from filter_engine import (
     FILTER_OPERATORS,
     MAX_FILTERS,
 )
+from chart_aggregation import (
+    ChartValidationError,
+    aggregate_chart,
+    validate_chart_request,
+)
 
 logger = logging.getLogger("metrivia.app")
 
@@ -456,6 +461,75 @@ def create_app(cors_origins=None):
                     "row_count": row_count,
                     "filtered_row_count": filtered_count,
                     "rows": rows,
+                }
+            ),
+            200,
+        )
+
+    @app.post("/api/datasets/<dataset_id>/chart")
+    def dataset_chart(dataset_id):
+        """Phase M4: server-side chart aggregation over the full dataset.
+
+        Request body (JSON):
+        {
+            "chart_type": "bar" | "line" | "area" | "pie" | "scatter",
+            "dimension": "<column>",
+            "measure": "<numeric column>" | null (count only),
+            "aggregation": "sum" | "average" | "min" | "max" | "count",
+            "filters": [ {"column": ..., "operator": ..., "value": ...} ],
+            "limit": 20,
+            "sort": "descending" | "ascending" | "category",
+            "date_granularity": "day" | "week" | "month" | "quarter" | "year"
+        }
+
+        ``dimension`` accepts ``x_column``/``category_column`` aliases and
+        ``measure`` accepts ``y_column``/``value_column`` aliases. Scatter
+        ignores ``aggregation``/``sort``/``date_granularity`` and returns
+        bounded raw points. See chart_aggregation.py for limits, ordering,
+        sampling, and timezone notes.
+
+        Order is always DataFrame -> M3 filter mask -> aggregation ->
+        bounded response. Only the aggregated payload is serialized —
+        never the complete (filtered) DataFrame.
+        """
+        record = dataset_store.get_dataset(dataset_id)
+        if record is None:
+            return jsonify({"error": "Not found."}), 404
+
+        if not request.is_json:
+            return _error("Request must be JSON.", 400)
+
+        data = request.get_json(silent=True)
+        if data is None or not isinstance(data, dict):
+            return _error("Invalid JSON body.", 400)
+
+        meta = record.metadata if isinstance(record.metadata, dict) else {}
+        try:
+            normalized = validate_chart_request(
+                data,
+                meta.get("columns", []),
+                meta.get("dtypes", {}),
+            )
+        except FilterValidationError as exc:
+            return _error(str(exc), 400)
+        except ChartValidationError as exc:
+            return _error(str(exc), 400)
+
+        df = record.dataframe
+        try:
+            result = aggregate_chart(
+                df, normalized, meta.get("dtypes", {}) if isinstance(meta, dict) else None
+            )
+        except (ChartValidationError, FilterValidationError) as exc:
+            return _error(str(exc), 400)
+        except Exception:
+            return _error("Failed to compute the chart.", 500)
+
+        return (
+            jsonify(
+                {
+                    "dataset_id": record.dataset_id,
+                    **result,
                 }
             ),
             200,

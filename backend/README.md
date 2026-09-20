@@ -19,6 +19,12 @@ workers — intentionally minimal for Render's free tier.
   rows (`dataset_id`, `page`, `page_size`, `row_count`, `rows`). Only the
   requested slice is serialized; a valid page past the end returns
   `"rows": []`. `page_size` max is 500. Unknown/expired IDs return 404.
+- `POST /api/datasets/<dataset_id>/chart` — server-side chart aggregation
+  over the full dataset (Phase M4). Small/local datasets keep the
+  client-side transform; server-backed datasets must use this endpoint so
+  the browser never receives 50k rows for charting. Unknown/expired IDs
+  return 404; invalid requests return 400; failures return 500 without a
+  stack trace.
 
 Upload response includes: `dataset_id`, `filename`, `row_count` (total
 rows), `column_count`, `columns`, `dtypes` (numeric / categorical /
@@ -37,6 +43,86 @@ disappear on process restart, are not shared between backend instances,
 expire after `DATASET_TTL_SECONDS` (default 1800), hold at most
 `MAX_DATASETS` (default 3, LRU-evicted), and are thread-safe. Temporary
 workspace storage, not a database.
+
+## Chart aggregation (Phase M4)
+
+`POST /api/datasets/<dataset_id>/chart` with a JSON body:
+
+```json
+{
+  "chart_type": "bar",
+  "dimension": "genre",
+  "measure": "stream_count",
+  "aggregation": "sum",
+  "filters": [{ "column": "genre", "operator": "in", "value": ["Pop"] }],
+  "limit": 20,
+  "sort": "descending",
+  "date_granularity": "day"
+}
+```
+
+- `chart_type`: `bar` | `line` | `area` | `pie` | `scatter` (one endpoint
+  for all types). `dimension` accepts `x_column` / `category_column`
+  aliases; `measure` accepts `y_column` / `value_column` aliases.
+- `measure` may be `null` only when `aggregation` is `count` (grouped
+  charts). Scatter requires a datetime `dimension` + numeric `measure` and
+  ignores `aggregation` / `sort` / `date_granularity`.
+- `aggregation`: `sum` | `average` (`avg` / `mean` accepted) | `min` |
+  `max` | `count`. Non-count aggregations need a numeric `measure`;
+  anything else is a 400 (never a misleading zero chart).
+- `filters` reuses the M3 filter engine verbatim (same `{column,
+  operator, value}` schema, AND semantics, missing-never-matches). Order
+  is always DataFrame → filter mask → aggregation → bounded response.
+- `limit` (optional): grouped charts default to and max out at
+  `MAX_CHART_CATEGORIES = 20` (mirrors the UI's 20-category cap);
+  scatter defaults to and maxes out at `MAX_SCATTER_POINTS = 2000`.
+  Larger values are a 400 — a client cannot force an oversized response.
+- `sort` (optional): `descending` (value, default for categorical) |
+  `ascending` (value) | `category` (label ascending, default for
+  datetime). Deterministic; ties break by label; the `"(blank)"` group
+  always sorts last (frontend parity). No arbitrary sort expressions.
+- `date_granularity` (optional): `day` (default) | `week` (Monday start) |
+  `month` | `quarter` | `year` — bucketing for grouped charts on a
+  datetime dimension only. Labels are period-start `YYYY-MM-DD` strings,
+  so chronological order is lexicographic. Timestamps are naive wall time
+  (no timezone conversion). Missing/invalid dates form `"(blank)"`.
+- Grouped charts return `data: [{ label, value }]` (at most `limit`
+  entries, sorted first, then sliced — documented top-N, no "Others"
+  bucket; `truncated` flags slicing). Pie keeps only positive values.
+- Scatter returns `data: [{ x, y }]` (ISO-8601 `x`, finite-number `y`),
+  deterministically evenly-spaced over filtered row order, then
+  chronological — no randomness, stable per dataset/filter/config.
+- No matching rows → `200` with `data: []` (not an error).
+  `filtered_row_count` uses the same semantics as the M3 Rows KPI.
+- Never `eval` / `exec` / `df.query` with client strings; unknown fields
+  are a 400. The stored DataFrame is never mutated and never fully
+  serialized — only the bounded aggregation leaves the server.
+
+Response:
+
+```json
+{
+  "dataset_id": "abc123",
+  "chart_type": "bar",
+  "dimension": "genre",
+  "measure": "stream_count",
+  "aggregation": "sum",
+  "filtered_row_count": 1427,
+  "row_count": 50000,
+  "data": [{ "label": "Pop", "value": 1234567 }],
+  "total_groups": 30,
+  "shown_groups": 20,
+  "truncated": true,
+  "sort": "descending",
+  "date_granularity": null
+}
+```
+
+Small vs server-backed behavior: the frontend keeps the client-side
+transform for full-preview datasets and POSTs this endpoint for
+server-backed ones (`frontend/src/lib/chart-data-source.js`, tested by
+`npm run chart:test`). Backend aggregation tests:
+`.venv\Scripts\python -m unittest test_chart_aggregation -v`.
 
 ## Run locally (Windows PowerShell)
 

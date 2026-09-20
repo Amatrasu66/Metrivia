@@ -84,8 +84,9 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   )
   // Local/small path: client filtering over the complete preview.
   // Server/large path: the preview is only a bounded head sample, so this
-  // client result is preview-scoped (charts + numeric summary until M4);
-  // the table + Rows KPI below use authoritative server counts instead.
+  // client result stays preview-scoped for the numeric summary; charts use
+  // server-side aggregation (M4) and the table + Rows KPI below use
+  // authoritative server counts instead.
   const filteredRows = useMemo(
     () => applyFilters(preview, filters),
     [preview, filters],
@@ -201,8 +202,8 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   // Phase M3 Rows KPI: small datasets use the client-filtered preview
   // (complete); server datasets use the authoritative filtered count lifted
   // from DataTable. Never imply the 500-row preview is the full result.
-  // Sum/average/min/max stay preview-scoped (see NumericSummary note) —
-  // full-dataset aggregation is M4 work and is not claimed here.
+  // Charts aggregate the full dataset server-side (M4); min/mean/max stay
+  // preview-scoped (see NumericSummary note) and do not claim otherwise.
   const serverRowsValue = !filtersActive
     ? formatCount(rowCount)
     : serverFilteredCount === null || serverFilteredCount === undefined
@@ -262,19 +263,18 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
         ))}
       </div>
 
-      {/* 2. Primary visualization — M3: charts still aggregate the bounded
-          preview sample (M4 moves them server-side). The scope note below
-          keeps filtered charts honest instead of implying full-dataset
-          filtered results. */}
+      {/* 2. Primary visualization — M4: server-backed datasets aggregate
+           the full dataset in Flask (chart config + active filters); small
+           datasets keep the instant client-side transform. */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Chart</CardTitle>
           <CardDescription>
             {serverBacked ? (
               <>
-                Configure the visualization — preview sample scope
-                ({formatCount(preview.length)} rows); full-dataset filtered
-                aggregation arrives in M4.
+                Configure the visualization — aggregated server-side from the
+                full dataset ({formatCount(rowCount)} rows) and respects
+                active filters.
               </>
             ) : (
               <>
@@ -287,6 +287,8 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
         <CardContent>
           <ChartBuilder
             dataset={filteredDataset}
+            sourceDataset={dataset}
+            filters={filters}
             config={chartConfig}
             onConfigChange={onChartConfigChange}
             emptyAction={emptyAction}
@@ -351,15 +353,15 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
           </CardContent>
         </Card>
 
-        {/* M3: min/mean/max below are preview-scoped for server datasets
-            (bounded sample, not full-dataset aggregation). Full server-side
-            aggregation is M4 work — the note keeps them honest. */}
+        {/* min/mean/max below stay preview-scoped for server datasets
+            (bounded sample, not full-dataset aggregation). Only charts moved
+            server-side in M4 — the note keeps the summary honest. */}
         <NumericSummary
           rows={filteredRows}
           numericColumns={numericColumns}
           scopeNote={
             serverBacked
-              ? "Preview sample scope — full-dataset aggregation arrives in M4."
+              ? "Preview sample scope — charts aggregate the full dataset server-side."
               : null
           }
         />
@@ -367,7 +369,7 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
 
       {/* 4. Data preview — M3: server-backed datasets page through filtered
            server pagination (DataTable owns it); small datasets render the
-           full preview as before. Charts stay preview-scoped until M4. */}
+           full preview as before. Charts aggregate server-side (M4). */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Data preview</CardTitle>

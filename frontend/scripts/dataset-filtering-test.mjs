@@ -365,9 +365,13 @@ check(
   /serverFilteredCount/.test(placeholderSrc) &&
     /Authoritative filtered rows/.test(placeholderSrc),
 )
+// Phase M4 intentionally changed this: server-backed charts now aggregate
+// the full dataset in Flask (POST /api/datasets/<id>/chart); only the
+// numeric summary stays preview-scoped. See dataset-chart-test.mjs T14.
 check(
-  "T15 charts explicitly preview-scoped until M4",
-  /preview sample scope|arrives in M4/.test(placeholderSrc),
+  "T15 charts aggregate server-side on large datasets (M4)",
+  /aggregated server-side from the/.test(placeholderSrc) &&
+    /sourceDataset=\{dataset\}/.test(placeholderSrc),
 )
 check(
   "T16 numeric summary carries preview-scope note on server",

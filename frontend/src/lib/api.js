@@ -527,6 +527,32 @@ export async function queryFilteredDatasetRows(
 }
 
 /**
+ * POST /api/datasets/<id>/chart — server-side chart aggregation (Phase M4).
+ *
+ * `chartRequest` is built by `buildChartRequest` in
+ * `lib/chart-data-source.js` (chart type + dimension + measure +
+ * aggregation + `toServerFilters()` output + limit/sort/date grouping).
+ * The backend applies the M3 filter mask over the FULL server-side
+ * DataFrame, aggregates, and returns a small bounded payload — the browser
+ * never receives the 50k-row dataset for charting. Re-throws AbortError
+ * untouched; a 404 ApiError means the server session expired.
+ */
+export async function queryChartData(
+  datasetId,
+  chartRequest,
+  { baseUrl, signal } = {},
+) {
+  const id = requireDatasetId(datasetId)
+  if (chartRequest === null || typeof chartRequest !== "object") {
+    throw new ApiError("Missing chart configuration. Please try again.")
+  }
+  return postDatasetJson(`/api/datasets/${encodeURIComponent(id)}/chart`, chartRequest, {
+    baseUrl,
+    signal,
+  })
+}
+
+/**
  * GET /api/datasets/<id>/rows?page=0&page_size=200 — one bounded page of
  * rows (never the whole dataset). `page` is 0-based; `pageSize` clamps to
  * the backend maximum server-side, but callers should use the centralized
