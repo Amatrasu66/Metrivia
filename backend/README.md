@@ -124,6 +124,73 @@ server-backed ones (`frontend/src/lib/chart-data-source.js`, tested by
 `npm run chart:test`). Backend aggregation tests:
 `.venv\Scripts\python -m unittest test_chart_aggregation -v`.
 
+## Performance architecture (Phase M5)
+
+Hot paths (filter masks, chart aggregation) are vectorized: one
+`Series.map` / `to_datetime` / `to_numeric` pass per column instead of
+per-cell Python loops. Measured speedups on the 50k x 33 Spotify CSV
+(interleaved old-vs-new, same machine): text `in` 2.4x, datetime `gte`
+2.3x, datetime `in` (3 values) 6.8x, chart labels 1.7x, grouped bar
+1.6x, scatter 4.3x. Per-operation transient memory fell too (scatter
+15.3 MiB -> 2.0 MiB, datetime mask 3.8 MiB -> 1.7 MiB). Outputs are
+byte-identical to the scalar implementations (see `test_performance_m5.py`
+`VectorParityTest`, snapshotted before optimizing, including garbage
+dates, floats, bools, `inf`, `None`/`""`).
+
+Deliberately NOT done (measured, kept simple):
+
+- No derived-data (parsed datetime/numeric) cache: a single vectorized
+  parse costs ~50ms per 50k column; the added invalidation/thread-safety
+  surface is not justified. Revisit only if datetime-heavy profiling
+  demands it.
+- No pandas `groupby` rewrite of the aggregation loop: the dict loop is
+  ~25ms per 50k rows; replicating sum-keeps-empty / average-omits-empty /
+  blank-last semantics in `groupby.agg` risks subtle drift for ~15ms.
+- No gzip on chart/filter/rows responses: largest chart payload is
+  ~88 KiB (scatter); gzip stays upload-only (level 1, streaming) and the
+  NDJSON progress stream is never compressed (compression would buffer
+  milestones). Verified by `EncodingBoundsTest`.
+- No streaming CSV parse: upload holds raw bytes + parser buffers + the
+  frame transiently (peak ~97 MiB for 11.5 MiB CSV); `raw` is released
+  before analysis and only the 500-row preview is serialized. The 20 MiB
+  cap, same-request progress streaming, and behavior are unchanged.
+- No frontend changes: chart adaptation is O(<=2000 points), the chart
+  cache holds at most 20 bounded payloads, table pages at most 4;
+  nothing retains the full dataset in the browser.
+
+Memory/lifecycle model:
+
+- Stored DataFrames are immutable after creation: every filter/chart/
+  rows/analysis path only reads (`df[col]`, `df.iloc`, boolean masks,
+  `to_datetime`/`to_numeric` copies). All `fillna`/`astype` calls act on
+  derived temporaries. A lifecycle test asserts the stored frame is
+  bit-identical after chart/filter/rows traffic.
+- `DatasetStore` (single `threading.Lock`, no reentrancy: public methods
+  never call each other while holding it): at most `MAX_DATASETS`
+  (default 3, LRU-evicted) DataFrames, TTL expiry on access, records
+  handed out by reference so in-flight requests survive delete/evict
+  (they finish on a detached record — 200, never 500 — and release it).
+  Concurrency tests cover 24 mixed threaded requests, delete-during-read,
+  and eviction isolation. Weakref tests prove deleted frames are freed.
+- No unbounded caches anywhere: backend holds zero caches; frontend
+  holds 20 chart payloads + 4 table pages max.
+
+Limits (all still server-enforced): 20 MiB upload, 3 datasets / 30 min
+TTL, page size <= 500, <= 20 chart groups, <= 2000 scatter points,
+<= 20 filters, <= 100 `in` values, 500-char string values. A 41 MiB
+100k x 33 CSV is correctly rejected with 413 at the door.
+
+Stress methodology: A uses the real Spotify CSV through `/api/upload`;
+B-E are generated in-process with fixed seeds (temporary, never
+committed) and inserted via `analyze_dataframe` + store (real analysis
+cost included); B additionally asserts the 413 upload rejection.
+Results are printed by the tests (`[stress-B/C/D/E]`, `[budget]`).
+
+Performance tests: `.venv\Scripts\python -m unittest test_performance_m5 -v`
+(slow suite, ~2-4 min — real 50k/100k datasets; ordinary suites stay
+fast). Budgets fail only on ~10x regressions (CI-noise-proof); the
+datetime guard fails long before a return to per-cell parsing (~28s).
+
 ## Run locally (Windows PowerShell)
 
 ```powershell

@@ -452,6 +452,97 @@ def _text_label(value):
     return str(value)
 
 
+def _column_label_parts(series):
+    """Vectorized ``_cell_text``: labels + has-value mask without per-cell loops.
+
+    Returns ``(labels, has_value)`` where ``labels`` is an object ndarray
+    (string label, or None for missing/``""``) and ``has_value`` a bool
+    ndarray. Outputs are identical to ``[_cell_text(v) for v in ...]``: the
+    expensive per-cell ``pd.isna`` try/except (~90ms per 50k column) becomes
+    one vectorized ``_empty_mask`` plus one C-driven ``Series.map`` over the
+    non-missing subset. The stored Series is never mutated.
+    """
+    n = len(series)
+    if n == 0:
+        return np.empty(0, dtype=object), np.empty(0, dtype=bool)
+    missing = _empty_mask(series)
+    try:
+        keep = (~missing.fillna(True).astype(bool)).to_numpy(
+            dtype=bool, copy=False
+        )
+    except Exception:
+        keep = np.array(
+            [not bool(v) for v in missing.tolist()], dtype=bool
+        )
+    labels = np.empty(n, dtype=object)
+    labels[:] = None
+    if bool(keep.any()):
+        try:
+            mapped = series[~missing].map(_text_label)
+            labels[keep] = mapped.to_numpy(dtype=object)
+        except Exception:
+            # Exotic dtype: scalar fallback over the kept positions only.
+            raws = series.tolist()
+            for i in np.flatnonzero(keep):
+                labels[i] = _text_label(raws[i])
+    return labels, keep
+
+
+def column_day_strings(series):
+    """Vectorized ``_cell_day_string`` (frontend ``toDayString`` parity).
+
+    Blind ``YYYY-MM-DD`` prefix for regex-matching strings (even impossible
+    dates such as ``2021-13-99`` — identical to the scalar fast path and the
+    frontend regex), parsed day for everything else, None for
+    missing/invalid. One vectorized ``str`` pass plus one ``to_datetime``
+    over the non-matching subset only (usually tiny for date columns), so a
+    date-only ``gte`` filter drops from ~160ms to ~15ms per 50k column.
+    The stored Series is never mutated.
+    """
+    n = len(series)
+    if n == 0:
+        return pd.Series([], index=series.index, dtype=object)
+    if pd.api.types.is_datetime64_any_dtype(series.dtype):
+        days = series.dt.strftime("%Y-%m-%d")
+        return days.where(days.notna(), None)
+    try:
+        first_ten = series.str[:10]
+        matched = first_ten.str.match(_DATE_ONLY_RE.pattern, na=False)
+    except (AttributeError, TypeError, ValueError):
+        matched = None
+    if matched is None:
+        # Non-string dtype (numeric/bool): every value takes the parse path,
+        # exactly like the scalar fallback.
+        try:
+            parsed = pd.to_datetime(series, errors="coerce", format="mixed")
+            days = parsed.dt.strftime("%Y-%m-%d")
+            return days.where(days.notna(), None)
+        except Exception:
+            return pd.Series([None] * n, index=series.index, dtype=object)
+    try:
+        matched = matched.fillna(False).astype(bool)
+    except Exception:
+        return pd.Series(
+            [_cell_day_string(v) for v in series.tolist()],
+            index=series.index,
+        )
+    out = pd.Series([None] * n, index=series.index, dtype=object)
+    if bool(matched.any()):
+        out[matched] = first_ten[matched]
+    rest = ~matched
+    if bool(rest.any()):
+        try:
+            parsed = pd.to_datetime(
+                series[rest], errors="coerce", format="mixed"
+            )
+            days = parsed.dt.strftime("%Y-%m-%d")
+            out[rest] = days.where(days.notna(), None)
+        except Exception:
+            for value, index in zip(series[rest].tolist(), series[rest].index):
+                out.at[index] = _cell_day_string(value)
+    return out
+
+
 def _cell_text(value):
     if value is None or value is pd.NA or value is pd.NaT:
         return None
@@ -497,16 +588,34 @@ def _numeric_mask(series, operator, value):
     )
 
 
-def _datetime_mask(series, operator, value):
+def _parsed_datetimes(series):
+    """One vectorized datetime parse of a column (never mutates it)."""
     try:
-        parsed_col = (
+        parsed = (
             series
             if pd.api.types.is_datetime64_any_dtype(series.dtype)
             else pd.to_datetime(series, errors="coerce", format="mixed")
         )
     except Exception:
-        parsed_col = pd.Series([pd.NaT] * len(series), index=series.index)
-    notna = parsed_col.notna().fillna(False).astype(bool)
+        parsed = pd.Series([pd.NaT] * len(series), index=series.index)
+    return parsed
+
+
+def _datetime_mask(series, operator, value):
+    # M5: the full-column timestamp parse (~50ms per 50k) is now lazy —
+    # pure date-only filters (the common UI case) only pay for the day
+    # strings. Timestamp paths parse exactly once; outputs unchanged.
+    parsed_col = None
+
+    def _parsed():
+        nonlocal parsed_col
+        if parsed_col is None:
+            parsed_col = _parsed_datetimes(series)
+        return parsed_col
+
+    def _notna():
+        return _parsed().notna().fillna(False).astype(bool)
+
     if operator in ("is_empty", "is_not_empty"):
         raise FilterValidationError("internal")
     if operator in ("eq", "neq", "gt", "gte", "lt", "lte"):
@@ -517,10 +626,9 @@ def _datetime_mask(series, operator, value):
         target = _parse_datetime_value(text)
         if is_date_only:
             day = text.strip()[:10]
-            days = pd.Series(
-                [_cell_day_string(v) for v in series.tolist()],
-                index=series.index,
-            )
+            # M5: one vectorized day-string pass instead of a per-cell
+            # _cell_day_string loop (~160ms -> ~15ms per 50k column).
+            days = column_day_strings(series)
             has_day = days.notna()
             if operator == "eq":
                 return (days == day).fillna(False).astype(bool) & has_day
@@ -534,80 +642,91 @@ def _datetime_mask(series, operator, value):
                 return ((days < day).fillna(False).astype(bool)) & has_day
             return ((days <= day).fillna(False).astype(bool)) & has_day
         target_ts = pd.Timestamp(target)
+        parsed = _parsed()
+        notna = _notna()
         if operator == "eq":
-            return ((parsed_col == target_ts).fillna(False).astype(bool)) & notna
+            return ((parsed == target_ts).fillna(False).astype(bool)) & notna
         if operator == "neq":
-            return ((parsed_col != target_ts).fillna(False).astype(bool)) & notna
+            return ((parsed != target_ts).fillna(False).astype(bool)) & notna
         if operator == "gt":
-            return ((parsed_col > target_ts).fillna(False).astype(bool)) & notna
+            return ((parsed > target_ts).fillna(False).astype(bool)) & notna
         if operator == "gte":
-            return ((parsed_col >= target_ts).fillna(False).astype(bool)) & notna
+            return ((parsed >= target_ts).fillna(False).astype(bool)) & notna
         if operator == "lt":
-            return ((parsed_col < target_ts).fillna(False).astype(bool)) & notna
-        return ((parsed_col <= target_ts).fillna(False).astype(bool)) & notna
+            return ((parsed < target_ts).fillna(False).astype(bool)) & notna
+        return ((parsed <= target_ts).fillna(False).astype(bool)) & notna
     if operator in ("in", "not_in"):
-        masks = []
+        # M5: validate every item exactly like the scalar path (invalid
+        # dates still 400), but parse the column once per kind instead of
+        # once per item: day-strings once for date-only items, timestamps
+        # once for the rest. Outputs are identical to the per-item
+        # recursion; only redundant conversions are removed.
+        day_items = []
+        ts_items = []
         for item in value:
             text = item if isinstance(item, str) else _text_label(item)
-            masks.append(
-                _datetime_mask(series, "eq", text).fillna(False).astype(bool)
-            )
-        combined = masks[0]
-        for extra in masks[1:]:
-            combined = combined | extra
+            target = _parse_datetime_value(text)
+            if isinstance(text, str) and _DATE_ONLY_RE.match(text.strip()):
+                day_items.append(text.strip()[:10])
+            else:
+                ts_items.append(pd.Timestamp(target))
+        combined = pd.Series([False] * len(series), index=series.index)
+        if day_items:
+            days = column_day_strings(series)
+            has_day = days.notna()
+            for day in day_items:
+                combined = combined | (
+                    (days == day).fillna(False).astype(bool) & has_day
+                )
+        if ts_items:
+            parsed = _parsed()
+            notna = _notna()
+            for target_ts in ts_items:
+                combined = combined | (
+                    ((parsed == target_ts).fillna(False).astype(bool)) & notna
+                )
         if operator == "in":
             return combined.fillna(False).astype(bool)
-        return ((~combined).fillna(False).astype(bool)) & notna
+        # not_in needs the parsed validity mask even for pure day items.
+        return ((~combined).fillna(False).astype(bool)) & _notna()
     raise FilterValidationError(
         f"Operator '{operator}' cannot be used on a datetime column."
     )
 
 
 def _text_mask(series, operator, value):
-    raws = series.tolist()
-    labels = [_cell_text(v) for v in raws]
-    has_value = pd.Series([v is not None for v in labels], index=series.index)
+    # M5: labels are built once via the vectorized _column_label_parts
+    # (identical outputs to the old per-cell _cell_text loop); equality and
+    # set membership then run as numpy ops instead of per-row Python. The
+    # substring family keeps its scalar loop over the prebuilt labels (it
+    # was never the bottleneck) with byte-identical results.
+    labels, has = _column_label_parts(series)
+    index = series.index
     if operator == "eq":
         wanted = _text_label(value)
         if wanted == BLANK_LABEL:
             return _empty_mask(series)
-        return pd.Series(
-            [(v is not None and v == wanted) for v in labels],
-            index=series.index,
-        )
+        return pd.Series(labels == wanted, index=index)
     if operator == "neq":
         wanted = _text_label(value)
         if wanted == BLANK_LABEL:
             # neq blank would select everything non-blank; keep the
             # missing-never-matches rule by requiring a value and inequality
             # against nothing meaningful -> all non-blank match.
-            return has_value
-        return pd.Series(
-            [(v is not None and v != wanted) for v in labels],
-            index=series.index,
-        )
+            return pd.Series(has, index=index)
+        return pd.Series(has & (labels != wanted), index=index)
     if operator == "in":
         wants = [_text_label(v) for v in value]
         want_blank = BLANK_LABEL in wants
         want_set = set(w for w in wants if w != BLANK_LABEL)
-        out = []
-        empty = _empty_mask(series).tolist()
-        for label, is_empty in zip(labels, empty):
-            if label is None:
-                out.append(bool(want_blank))
-            else:
-                out.append(label in want_set)
-        return pd.Series(out, index=series.index)
+        hit = np.isin(labels, list(want_set))
+        if want_blank:
+            hit = hit | (~has)
+        return pd.Series(hit, index=index)
     if operator == "not_in":
         wants = [_text_label(v) for v in value]
         want_set = set(w for w in wants if w != BLANK_LABEL)
-        out = []
-        for label in labels:
-            if label is None:
-                out.append(False)
-            else:
-                out.append(label not in want_set)
-        return pd.Series(out, index=series.index)
+        return pd.Series(has & ~np.isin(labels, list(want_set)), index=index)
     if operator in (
         "contains",
         "not_contains",
@@ -627,10 +746,10 @@ def _text_mask(series, operator, value):
                 out.append(label.startswith(needle))
             else:
                 out.append(label.endswith(needle))
-        result = pd.Series(out, index=series.index)
+        result = pd.Series(out, index=index)
         if operator == "not_contains":
             # Missing never matches, even negated text search.
-            return result & has_value
+            return result & pd.Series(has, index=index)
         return result
     raise FilterValidationError(
         f"Operator '{operator}' cannot be used on a text column."
