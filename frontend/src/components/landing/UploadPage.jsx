@@ -25,9 +25,15 @@ export function UploadPage({
 
   const scrollToUpload = () => {
     tap()
-    document
-      .getElementById("upload-card")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    // Phase M6: honor reduced-motion — instant jump instead of smooth scroll.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    document.getElementById("upload-card")?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    })
     document.getElementById("csv-file-input")?.focus({ preventScroll: true })
   }
 

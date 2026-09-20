@@ -16,6 +16,7 @@ import { useWorkspaces } from "@/hooks/useWorkspaces"
 import { useMetriviaHaptics } from "@/hooks/useMetriviaHaptics"
 import {
   ApiError,
+  describeApiError,
   uploadCsvWithProgress,
   waitForBackendHealthy,
 } from "@/lib/api"
@@ -504,10 +505,13 @@ function Shell() {
         uploadProgress: null,
         uploadStage: "",
         analysisStartedAt: null,
-        errorMessage:
-          err instanceof ApiError
-            ? err.message
-            : "Something went wrong while uploading. Please try again.",
+        // Phase M6: normalized copy — specific backend validation messages
+        // are kept verbatim; network/5xx fall back to concise retryable
+        // text instead of raw errors.
+        errorMessage: describeApiError(
+          err,
+          "Something went wrong while uploading. Please try again.",
+        ).message,
       })
     } finally {
       if (analyzingTimer !== null) clearTimeout(analyzingTimer)

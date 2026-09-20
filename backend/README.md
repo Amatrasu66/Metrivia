@@ -191,6 +191,67 @@ Performance tests: `.venv\Scripts\python -m unittest test_performance_m5 -v`
 fast). Budgets fail only on ~10x regressions (CI-noise-proof); the
 datetime guard fails long before a return to per-cell parsing (~28s).
 
+## Production hardening (Phase M6)
+
+Final API contracts (all errors are JSON `{"error": "<message>"}` — never
+HTML pages, never tracebacks/paths/secrets):
+
+| Endpoint | Success | Client errors | Notes |
+|---|---|---|---|
+| `GET /api/health` | 200 `{status, service, message}` | — | Fast (<1s), no dataset/env/secret/memory data |
+| `POST /api/upload` | 200 dataset payload | 400 bad CSV, 413 over 20 MiB | `?stream=progress` streams NDJSON milestones |
+| `GET /api/datasets/<id>` | 200 metadata | 404 unknown/expired | No row data |
+| `GET /api/datasets/<id>/rows` | 200 page | 400 bad page/size, 404 expired | `page_size` max 500 |
+| `POST /api/datasets/<id>/filter` | 200 page + counts | 400 validation/JSON, 404 expired | `page_size` max 500 |
+| `POST /api/datasets/<id>/chart` | 200 bounded payload | 400 validation/JSON, 404 expired | ≤20 groups, ≤2000 scatter points |
+
+Framework-level failures (unknown route → 404, wrong method → 405, bad
+multipart → 400, unhandled exception → generic 500) also return the same
+JSON shape. The string shape is kept deliberately: the frontend parses
+`body.error` as a string everywhere.
+
+Upload hardening: the 20 MiB ceiling is enforced twice (Flask
+`MAX_CONTENT_LENGTH` + an in-route byte cap, both from `MAX_UPLOAD_MB`).
+Malformed/inconsistent-row CSVs → 400 "malformed"; empty files → 400;
+header-only files → 400 naming headers; duplicate column names are mangled
+by pandas (`a`, `a.1`) and stay usable; Unicode/quoted-newline/NaN/Inf/
+invalid-date cells are accepted and normalized (NaN/Inf → null, missing
+dates → `"(blank)"` group); over-long single fields return a clean
+200 or 400, never a 500 with leakage. A local 18.56 MiB numeric CSV
+(30k × 33) uploads in ~2.1s with a bounded 500-row preview.
+
+Abuse/resource protection: no separate rate limiter was added — the
+existing server-enforced bounds already cap every expensive path (20 MiB
+upload, 3 datasets / 30 min TTL, page size ≤ 500, ≤ 20 filters, ≤ 100 `in`
+values, ≤ 500-char values, ≤ 20 chart groups, ≤ 2000 scatter points), and
+every endpoint is a short synchronous request with no amplification
+(an attacker can only spend roughly what they send). A process-local
+limiter would add shared-state complexity on a stateless free-tier service
+without covering multi-instance deployments, so it was documented away
+rather than built.
+
+Structured logging (stdlib `logging`, Render captures stdout):
+`event=request method=… path=… status=… duration_ms=…` for every API call
+(health + table pages at DEBUG, uploads/filters/charts/metadata and ALL
+4xx/5xx at INFO); `event=filter_query filters=… matched=… duration_ms=…`;
+`event=chart_query chart_type=… aggregation=… filters=… groups/points=…
+duration_ms=…`; `event=dataset_created/expired/pruned` with counts only.
+Never logged: CSV contents, DataFrames, filter values, column data,
+secrets, credentials, tracebacks. 404s on dataset endpoints specifically
+surface expired/missing sessions.
+
+Production checklist: set `CORS_ORIGINS` to the exact Vercel URL (replaces
+dev defaults, no wildcards); `VITE_API_URL` at Vercel build time (never
+localhost); `FLASK_DEBUG` unset (debug off by default); `render.yaml`
+pins Python 3.13.0, free plan, `python app.py` (reads Render `PORT`).
+Cold starts are expected on Render Free (backend sleeps when idle); the
+frontend waits up to ~60s with "Starting the analysis server…" messaging
+and no keep-alive ping was added.
+
+M6 tests: `.venv\Scripts\python -m unittest test_m6_production -v`
+(36 tests: health/error contracts, expiry 404s, upload hardening, chart
+bounds, concurrency isolation, log safety, security audit).
+
 ## Run locally (Windows PowerShell)
 
 ```powershell

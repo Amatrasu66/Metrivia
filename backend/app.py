@@ -138,6 +138,50 @@ def create_app(cors_origins=None):
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     CORS(app, resources={r"/api/*": {"origins": _resolve_cors_origins(cors_origins)}})
 
+    # Phase M6: lightweight request timing + structured access logging.
+    # One timer per request; the after-request hook below emits a single
+    # safe line (method/path/status/duration — never bodies, values, or
+    # secrets). No middleware, no new dependency.
+    @app.before_request
+    def _m6_start_timer():
+        request._m6_started = time.perf_counter()
+
+    @app.after_request
+    def _m6_access_log(response):
+        try:
+            path = request.path or ""
+            if not path.startswith("/api/"):
+                return response
+            started = getattr(request, "_m6_started", None)
+            duration_ms = (
+                (time.perf_counter() - started) * 1000
+                if started is not None
+                else -1.0
+            )
+            status = response.status_code
+            # Noisy high-frequency endpoints (health probes during the
+            # Render wake loop, table page fetches) log at debug; everything
+            # else — uploads, filter/chart queries, metadata reads, and ANY
+            # 4xx/5xx (expired datasets, validation failures, 413s) — logs
+            # at info so production failures stay visible in Render logs.
+            noisy = path == "/api/health" or path.endswith("/rows")
+            level = (
+                logging.INFO
+                if (status >= 400 or not noisy)
+                else logging.DEBUG
+            )
+            logger.log(
+                level,
+                "event=request method=%s path=%s status=%d duration_ms=%.1f",
+                request.method,
+                path,
+                status,
+                duration_ms,
+            )
+        except Exception:
+            pass
+        return response
+
     @app.get("/api/health")
     def health():
         return (
@@ -401,6 +445,7 @@ def create_app(cors_origins=None):
             return _error("Invalid JSON body.", 400)
 
         meta = record.metadata if isinstance(record.metadata, dict) else {}
+        filter_started = time.perf_counter()
         try:
             validated = validate_filter_request(
                 data,
@@ -452,6 +497,19 @@ def create_app(cors_origins=None):
         else:
             rows = []
 
+        # Phase M6 domain context for the access log above: filter count +
+        # match count + latency. Column names and filter values are never
+        # logged (values may be sensitive).
+        logger.info(
+            "event=filter_query filters=%d page=%d page_size=%d "
+            "matched=%d rows=%d duration_ms=%.1f status=200",
+            len(filters),
+            page,
+            page_size,
+            filtered_count,
+            row_count,
+            (time.perf_counter() - filter_started) * 1000,
+        )
         return (
             jsonify(
                 {
@@ -504,6 +562,7 @@ def create_app(cors_origins=None):
             return _error("Invalid JSON body.", 400)
 
         meta = record.metadata if isinstance(record.metadata, dict) else {}
+        chart_started = time.perf_counter()
         try:
             normalized = validate_chart_request(
                 data,
@@ -525,6 +584,21 @@ def create_app(cors_origins=None):
         except Exception:
             return _error("Failed to compute the chart.", 500)
 
+        # Phase M6 domain context: chart shape + result size + latency.
+        # Dimension/measure names and filter values are never logged.
+        logger.info(
+            "event=chart_query chart_type=%s aggregation=%s filters=%d "
+            "groups=%s points=%s filtered_rows=%s duration_ms=%.1f status=200",
+            normalized.get("chart_type"),
+            normalized.get("aggregation"),
+            len(normalized.get("filters", [])),
+            result.get("shown_groups"),
+            len(result.get("data", []))
+            if normalized.get("chart_type") == "scatter"
+            else "-",
+            result.get("filtered_row_count"),
+            (time.perf_counter() - chart_started) * 1000,
+        )
         return (
             jsonify(
                 {
@@ -550,6 +624,35 @@ def create_app(cors_origins=None):
     @app.errorhandler(404)
     def handle_not_found(_exc):
         return jsonify({"error": "Not found."}), 404
+
+    # Phase M6: API failures must always be JSON (never Flask's default
+    # HTML error pages) with the same {"error": <message>} shape the
+    # frontend already parses. These handlers only fire for framework-level
+    # aborts — route-level _error() responses above are untouched.
+    @app.errorhandler(400)
+    def handle_bad_request(_exc):
+        return jsonify({"error": "Bad request."}), 400
+
+    @app.errorhandler(405)
+    def handle_method_not_allowed(_exc):
+        return jsonify({"error": "Method not allowed."}), 405
+
+    @app.errorhandler(500)
+    def handle_internal_error(exc):
+        # Safe metadata only: path + exception class name. Never the
+        # request body, dataset contents, env, or traceback text.
+        try:
+            logger.exception(
+                "event=internal_error path=%s exc=%s",
+                request.path,
+                type(exc).__name__,
+            )
+        except Exception:
+            pass
+        return (
+            jsonify({"error": "The server had a problem. Please try again."}),
+            500,
+        )
 
     return app
 

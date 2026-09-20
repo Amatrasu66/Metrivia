@@ -45,5 +45,7 @@ npm run dev
    `VITE_API_URL=https://metrivia-backend.onrender.com` (your real backend
    URL — never localhost for production). Deploy.
 4. Verify: frontend loads, `GET <backend>/api/health` responds, upload
-   `frontend/public/sample.csv` through production, chart renders, no CORS
-   errors in the console.
+    `frontend/public/sample.csv` through production, chart renders, no CORS
+    errors in the console. Production contracts, logging, and the
+    deployment checklist live in `backend/README.md` ("Production
+    hardening (Phase M6)").

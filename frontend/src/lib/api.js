@@ -33,6 +33,77 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Phase M6: normalize any API failure into concise user-facing copy.
+ *
+ * The backend already returns plain-language `body.error` strings (never
+ * tracebacks), so specific 400/413 server messages are kept verbatim —
+ * they carry details the UI cannot reconstruct (e.g. which column is
+ * unknown). Only cases where the server message is missing/generic, or
+ * where a status implies a recovery action, are mapped:
+ * - network errors → unreachable / cold-start hint (retryable)
+ * - 404 → session expired (re-upload, never auto-retry)
+ * - 429 → slow down (retryable)
+ * - 5xx → server problem (retryable)
+ *
+ * Returns `{ message, expired?, retryable?, isNetworkError?, aborted? }`.
+ * AbortError maps to `{ aborted: true, message: null }` so callers can
+ * keep ignoring cancellations. Never throws.
+ */
+export function describeApiError(error, fallbackMessage) {
+  const fallback =
+    typeof fallbackMessage === "string" && fallbackMessage.trim() !== ""
+      ? fallbackMessage
+      : "Something went wrong. Please try again."
+  try {
+    if (error?.name === "AbortError") {
+      return { aborted: true, message: null }
+    }
+    const status = Number(error?.status)
+    const hasStatus = Number.isFinite(status)
+    const serverMessage =
+      typeof error?.message === "string" && error.message.trim() !== ""
+        ? error.message
+        : null
+    if (error?.isNetworkError) {
+      return {
+        message:
+          "Could not reach the analysis server. It may be waking up — please try again.",
+        isNetworkError: true,
+        retryable: true,
+      }
+    }
+    if (hasStatus && status === 404) {
+      return {
+        message:
+          "This dataset session has expired. Please upload the CSV again.",
+        expired: true,
+        status,
+      }
+    }
+    if (hasStatus && status === 429) {
+      return {
+        message: "Too many requests. Please wait a moment and try again.",
+        retryable: true,
+        status,
+      }
+    }
+    if (hasStatus && status >= 500) {
+      return {
+        message: "The analysis server had a problem. Please try again.",
+        retryable: true,
+        status,
+      }
+    }
+    return {
+      message: serverMessage ?? fallback,
+      status: hasStatus ? status : null,
+    }
+  } catch {
+    return { message: fallback }
+  }
+}
+
 async function parseJsonSafe(response) {
   try {
     return await response.json()

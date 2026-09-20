@@ -26,10 +26,13 @@ scattered as magic numbers across app/analysis code):
   returned; ``row_count`` = total dataset rows.
 """
 
+import logging
 import os
 import threading
 import time
 import uuid
+
+logger = logging.getLogger("metrivia.dataset_store")
 
 # --- Centralized preview policy (single source of truth) ---
 FULL_PREVIEW_MAX_ROWS = 5000
@@ -132,6 +135,14 @@ class DatasetStore:
             ]
             for key in expired:
                 del self._datasets[key]
+            if expired:
+                # Lifecycle observability (Phase M6): counts only, never
+                # contents, filenames, or ids.
+                logger.info(
+                    "event=datasets_pruned expired=%d remaining=%d",
+                    len(expired),
+                    len(self._datasets),
+                )
             return len(expired)
 
     def create_dataset(self, dataframe, metadata):
@@ -153,12 +164,14 @@ class DatasetStore:
             for key in expired:
                 del self._datasets[key]
             # 2/3. Enforce max count via LRU eviction.
+            evicted = 0
             while len(self._datasets) >= max(int(maximum), 1):
                 lru_key = min(
                     self._datasets,
                     key=lambda k: self._datasets[k].last_accessed_at,
                 )
                 del self._datasets[lru_key]
+                evicted += 1
             # 4. Insert new dataset with an opaque unique ID.
             dataset_id = uuid.uuid4().hex
             while dataset_id in self._datasets:
@@ -170,6 +183,14 @@ class DatasetStore:
                 now=now,
             )
             self._datasets[dataset_id] = record
+            # Lifecycle observability (Phase M6): counts only — never
+            # contents, filenames, or ids.
+            logger.info(
+                "event=dataset_created expired_removed=%d evicted=%d stored=%d",
+                len(expired),
+                evicted,
+                len(self._datasets),
+            )
             return record
 
     def get_dataset(self, dataset_id):
@@ -185,6 +206,13 @@ class DatasetStore:
                 return None
             if (now - record.last_accessed_at) > self._ttl():
                 del self._datasets[dataset_id]
+                # Expired-dataset observability (Phase M6): the API layer
+                # already logs the 404; this line attributes it to TTL
+                # expiry. No contents, no ids.
+                logger.info(
+                    "event=dataset_expired remaining=%d",
+                    len(self._datasets),
+                )
                 return None
             record.last_accessed_at = now
             return record
