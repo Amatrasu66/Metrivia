@@ -70,8 +70,20 @@ class ResponseEncodingTest(unittest.TestCase):
         gz_body = body_bytes(gz)
         plain_body = body_bytes(plain)
         self.assertLess(len(gz_body), len(plain_body))
-        self.assertEqual(gzip.decompress(gz_body), plain_body)
-        payload = json.loads(plain_body)
+        # Phase M1: each upload mints a unique dataset_id, so compare the
+        # gunzipped payload ignoring that one field (everything else must
+        # be byte-exact for the same file).
+        plain_payload = json.loads(plain_body)
+        gz_payload = json.loads(gzip.decompress(gz_body))
+        self.assertIn("dataset_id", plain_payload)
+        self.assertIn("dataset_id", gz_payload)
+        plain_cmp = {k: v for k, v in plain_payload.items() if k != "dataset_id"}
+        gz_cmp = {k: v for k, v in gz_payload.items() if k != "dataset_id"}
+        self.assertEqual(
+            json.dumps(gz_cmp, sort_keys=True),
+            json.dumps(plain_cmp, sort_keys=True),
+        )
+        payload = plain_payload
         self.assertEqual(payload["row_count"], 3000)
         self.assertEqual(len(payload["preview"]), 3000)
 

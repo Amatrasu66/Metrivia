@@ -33,6 +33,13 @@ from analysis import (
     PROGRESS_RESPONSE_READY,
     _analyze_iter,
     analyze_dataframe,
+    slice_to_records,
+)
+import dataset_store
+from dataset_store import (
+    PAGE_DEFAULT,
+    PAGE_SIZE_DEFAULT,
+    PAGE_SIZE_MAX,
 )
 
 logger = logging.getLogger("metrivia.app")
@@ -211,10 +218,24 @@ def create_app(cors_origins=None):
             analysis_ms = (time.perf_counter() - analysis_started) * 1000
         except Exception:
             return _error("Failed to analyze the CSV file.", 500)
-        finally:
-            # The records list inside `result` is all the serializer needs;
-            # drop the DataFrame (and its object-dtype columns) first.
-            del df
+        # Phase M1: store the DataFrame server-side and return an opaque
+        # dataset_id + bounded preview. Small datasets keep the complete
+        # preview (compatibility); large datasets return only the head
+        # sample (analysis.py bounds it — never 50k row dicts here).
+        # TODO (Phase M2): the current frontend still reads dataset.preview
+        # for DataTable/filtering/charts. M2 migrates it to dataset_id +
+        # GET /api/datasets/<id>/rows server-side pagination instead of
+        # relying on the (now bounded for large files) preview.
+        try:
+            store_ms_start = time.perf_counter()
+            result = _store_and_augment(df, result)
+            store_ms = (time.perf_counter() - store_ms_start) * 1000
+        except Exception:
+            return _error("Failed to analyze the CSV file.", 500)
+        # The store now owns the DataFrame reference; release our local
+        # name (no full row-dict copy is held beyond the bounded preview
+        # inside `result`).
+        del df
         row_count = result.get("row_count")
         column_count = result.get("column_count")
         raw_size = request.content_length or 0
@@ -223,17 +244,103 @@ def create_app(cors_origins=None):
         if use_gzip:
             response = _gzip_response(response)
         logger.info(
-            "upload filename=%s size_bytes=%d rows=%s cols=%s read_ms=%.1f analysis_ms=%.1f gzip=%d total_ms=%.1f",
+            "upload filename=%s size_bytes=%d rows=%s cols=%s read_ms=%.1f analysis_ms=%.1f store_ms=%.1f gzip=%d total_ms=%.1f",
             safe_name,
             raw_size,
             row_count,
             column_count,
             read_ms,
             analysis_ms,
+            store_ms,
             1 if use_gzip else 0,
             (time.perf_counter() - request_started) * 1000,
         )
         return response, 200
+
+    @app.get("/api/datasets/<dataset_id>")
+    def dataset_metadata(dataset_id):
+        """Phase M1: metadata for a stored dataset (no row data)."""
+        record = dataset_store.get_dataset(dataset_id)
+        if record is None:
+            return jsonify({"error": "Not found."}), 404
+        meta = record.metadata
+        return (
+            jsonify(
+                {
+                    "dataset_id": record.dataset_id,
+                    "row_count": meta.get("row_count"),
+                    "column_count": meta.get("column_count"),
+                    "columns": meta.get("columns", []),
+                    "preview_count": meta.get("preview_count"),
+                    "metadata": {
+                        "filename": meta.get("filename"),
+                        "dtypes": meta.get("dtypes", {}),
+                        "missing": meta.get("missing", {}),
+                        "unique": meta.get("unique", {}),
+                        "numeric_stats": meta.get("numeric_stats", {}),
+                    },
+                }
+            ),
+            200,
+        )
+
+    @app.get("/api/datasets/<dataset_id>/rows")
+    def dataset_rows(dataset_id):
+        """Phase M1: paginated rows for a stored dataset.
+
+        Query params: page (default 0), page_size (default 100, max 500).
+        Only the requested slice is serialized; a valid page beyond the
+        dataset returns {"rows": []}. The DataFrame is never mutated.
+        """
+        record = dataset_store.get_dataset(dataset_id)
+        if record is None:
+            return jsonify({"error": "Not found."}), 404
+        page_raw = request.args.get("page", str(PAGE_DEFAULT))
+        size_raw = request.args.get("page_size", str(PAGE_SIZE_DEFAULT))
+        try:
+            page = int(page_raw)
+        except (TypeError, ValueError):
+            return _error(
+                "Invalid 'page'. It must be an integer >= 0.", 400
+            )
+        try:
+            page_size = int(size_raw)
+        except (TypeError, ValueError):
+            return _error(
+                "Invalid 'page_size'. It must be an integer between 1 and "
+                f"{PAGE_SIZE_MAX}.",
+                400,
+            )
+        if page < 0:
+            return _error(
+                "Invalid 'page'. It must be an integer >= 0.", 400
+            )
+        if page_size < 1 or page_size > PAGE_SIZE_MAX:
+            return _error(
+                "Invalid 'page_size'. It must be an integer between 1 and "
+                f"{PAGE_SIZE_MAX}.",
+                400,
+            )
+        row_count = int(len(record.dataframe))
+        start = page * page_size
+        end = min(start + page_size, row_count)
+        rows = (
+            slice_to_records(record.dataframe, start, end)
+            if start < row_count
+            else []
+        )
+        return (
+            jsonify(
+                {
+                    "dataset_id": record.dataset_id,
+                    "page": page,
+                    "page_size": page_size,
+                    "row_count": row_count,
+                    "rows": rows,
+                }
+            ),
+            200,
+        )
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_too_large(_exc):
@@ -295,6 +402,35 @@ def _progress_error_line(message, status):
     )
 
 
+def _build_stored_metadata(result):
+    """Extract the storable metadata subset from an analysis payload."""
+    return {
+        "filename": result.get("filename"),
+        "row_count": result.get("row_count"),
+        "column_count": result.get("column_count"),
+        "columns": list(result.get("columns", [])),
+        "dtypes": dict(result.get("dtypes", {})),
+        "missing": dict(result.get("missing", {})),
+        "unique": dict(result.get("unique", {})),
+        "numeric_stats": dict(result.get("numeric_stats", {})),
+        "preview_count": result.get("preview_count"),
+    }
+
+
+def _store_and_augment(df, result):
+    """Store ``df`` + metadata and inject the opaque dataset_id.
+
+    Single shared helper for both the normal JSON upload and the NDJSON
+    progress upload so the two paths can never diverge in storage logic.
+    The DataFrame is stored by reference (canonical server-side
+    representation); only the already-bounded ``preview`` inside ``result``
+    is ever serialized to the client.
+    """
+    record = dataset_store.create_dataset(df, _build_stored_metadata(result))
+    result["dataset_id"] = record.dataset_id
+    return result
+
+
 def _progress_stream_response(raw, safe_name, raw_size, request_started):
     """Stream real backend milestones + the dataset from one upload request.
 
@@ -320,6 +456,7 @@ def _progress_stream_response(raw, safe_name, raw_size, request_started):
         state = {"raw": raw}
         read_ms = 0.0
         analysis_ms = 0.0
+        store_ms = 0.0
         try:
             yield _progress_line(
                 PROGRESS_FILE_ACCEPTED, "file_accepted", "File received"
@@ -346,12 +483,16 @@ def _progress_stream_response(raw, safe_name, raw_size, request_started):
 
             analysis_started = time.perf_counter()
             result = None
+            df_for_store = None
             try:
                 for item in _analyze_iter(df, safe_name):
                     if item[0] == "progress":
                         yield _progress_line(item[1], item[2], item[3])
                     elif item[0] == "result":
                         result = item[1]
+                # Keep the frame for the store; the local name is released
+                # below (the store owns the reference).
+                df_for_store = df
             except Exception:
                 yield _progress_error_line(
                     "Failed to analyze the CSV file.", 500
@@ -368,6 +509,24 @@ def _progress_stream_response(raw, safe_name, raw_size, request_started):
                     "Failed to analyze the CSV file.", 500
                 )
                 return
+            # Phase M1: same storage logic as the normal JSON upload —
+            # bounded preview only, never full row-dict construction for
+            # large datasets. The final streamed result carries dataset_id,
+            # preview_count, and row_count.
+            try:
+                store_started = time.perf_counter()
+                result = _store_and_augment(df_for_store, result)
+                store_ms = (time.perf_counter() - store_started) * 1000
+            except Exception:
+                yield _progress_error_line(
+                    "Failed to analyze the CSV file.", 500
+                )
+                return
+            finally:
+                try:
+                    del df_for_store
+                except Exception:
+                    pass
             yield _progress_line(
                 PROGRESS_RESPONSE_READY,
                 "response_ready",
@@ -379,13 +538,14 @@ def _progress_stream_response(raw, safe_name, raw_size, request_started):
             yield b"\n"
             logger.info(
                 "upload stream=1 filename=%s size_bytes=%d rows=%s cols=%s "
-                "read_ms=%.1f analysis_ms=%.1f gzip=0 total_ms=%.1f",
+                "read_ms=%.1f analysis_ms=%.1f store_ms=%.1f gzip=0 total_ms=%.1f",
                 safe_name,
                 raw_size,
                 result.get("row_count"),
                 result.get("column_count"),
                 read_ms,
                 analysis_ms,
+                store_ms,
                 (time.perf_counter() - request_started) * 1000,
             )
         finally:

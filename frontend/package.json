@@ -15,6 +15,7 @@
     "bar:test": "node ./scripts/bar-labels-test.mjs",
     "scatter:test": "node ./scripts/scatter-bounds-test.mjs",
     "loading:test": "node ./scripts/loading-progress-test.mjs",
+    "pagination:test": "node ./scripts/dataset-pagination-test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

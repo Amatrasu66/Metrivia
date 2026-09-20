@@ -101,9 +101,15 @@ class UploadProgressTest(unittest.TestCase):
         resp = post_stream(self.client, SAMPLE_CSV, "sample.csv")
         _, result, _ = parse_stream(resp)
         self.assertIsNotNone(result)
+        # Phase M1: each upload mints a unique opaque dataset_id, so the
+        # two payloads differ only there — everything else must match.
+        self.assertIn("dataset_id", plain_data)
+        self.assertIn("dataset_id", result)
+        plain_cmp = {k: v for k, v in plain_data.items() if k != "dataset_id"}
+        result_cmp = {k: v for k, v in result.items() if k != "dataset_id"}
         self.assertEqual(
-            json.dumps(result, sort_keys=True),
-            json.dumps(plain_data, sort_keys=True),
+            json.dumps(result_cmp, sort_keys=True),
+            json.dumps(plain_cmp, sort_keys=True),
         )
         for field in (
             "filename",
@@ -144,7 +150,18 @@ class UploadProgressTest(unittest.TestCase):
         self.assertEqual(gz.status_code, 200)
         self.assertEqual(gz.headers.get("Content-Encoding"), "gzip")
         plain_body = b"".join(plain.response)
-        self.assertEqual(gzip.decompress(b"".join(gz.response)), plain_body)
+        gz_body = json.loads(gzip.decompress(b"".join(gz.response)))
+        plain_data = json.loads(plain_body)
+        # Phase M1: each upload mints a unique dataset_id — compare the
+        # gunzipped payload ignoring that one field.
+        self.assertIn("dataset_id", plain_data)
+        self.assertIn("dataset_id", gz_body)
+        plain_cmp = {k: v for k, v in plain_data.items() if k != "dataset_id"}
+        gz_cmp = {k: v for k, v in gz_body.items() if k != "dataset_id"}
+        self.assertEqual(
+            json.dumps(gz_cmp, sort_keys=True),
+            json.dumps(plain_cmp, sort_keys=True),
+        )
 
     def test_pre_validation_errors_stay_json(self):
         resp = post_stream(self.client, b"{}", "data.json")

@@ -422,3 +422,76 @@ export async function uploadCsvWithProgress(
   }
   return dataset
 }
+
+/**
+ * Shared GET helper for the Phase M1/M2 dataset endpoints — the single
+ * fetch configuration for metadata + rows (base URL, error mapping, abort
+ * semantics). Upload/health keep their existing paths untouched.
+ */
+async function fetchDatasetJson(path, { baseUrl, signal, query } = {}) {
+  let url = `${resolveBaseUrl(baseUrl)}${path}`
+  if (query && typeof query === "object") {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null) continue
+      params.set(key, String(value))
+    }
+    const encoded = params.toString()
+    if (encoded !== "") url += `?${encoded}`
+  }
+  let response
+  try {
+    response = await fetch(url, { signal })
+  } catch (err) {
+    if (err?.name === "AbortError") throw err
+    throw new ApiError(networkErrorMessage(), { isNetworkError: true })
+  }
+  const body = await parseJsonSafe(response)
+  if (!response.ok) {
+    const message =
+      body && typeof body.error === "string" && body.error.trim() !== ""
+        ? body.error
+        : `Request failed (HTTP ${response.status}). Please try again.`
+    throw new ApiError(message, { status: response.status })
+  }
+  return body
+}
+
+function requireDatasetId(datasetId) {
+  if (typeof datasetId !== "string" || datasetId.trim() === "") {
+    throw new ApiError("Missing dataset id. Please upload the CSV again.")
+  }
+  return datasetId.trim()
+}
+
+/**
+ * GET /api/datasets/<id> — metadata without row data (row/column counts,
+ * schema, preview count). Re-throws AbortError untouched.
+ */
+export async function getDatasetMetadata(datasetId, { baseUrl, signal } = {}) {
+  const id = requireDatasetId(datasetId)
+  return fetchDatasetJson(`/api/datasets/${encodeURIComponent(id)}`, {
+    baseUrl,
+    signal,
+  })
+}
+
+/**
+ * GET /api/datasets/<id>/rows?page=0&page_size=200 — one bounded page of
+ * rows (never the whole dataset). `page` is 0-based; `pageSize` clamps to
+ * the backend maximum server-side, but callers should use the centralized
+ * SERVER_PAGE_SIZE_* constants. Re-throws AbortError untouched so table
+ * cancellation stays silent; a 404 ApiError means the server session
+ * expired (callers show the expired-dataset state, never auto-retry).
+ */
+export async function getDatasetRows(
+  datasetId,
+  { page = 0, pageSize = 200, baseUrl, signal } = {},
+) {
+  const id = requireDatasetId(datasetId)
+  return fetchDatasetJson(`/api/datasets/${encodeURIComponent(id)}/rows`, {
+    baseUrl,
+    signal,
+    query: { page, page_size: pageSize },
+  })
+}

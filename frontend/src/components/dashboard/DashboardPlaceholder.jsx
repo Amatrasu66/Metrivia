@@ -13,6 +13,7 @@ import {
   defaultFilterState,
   isFilterActive,
 } from "@/lib/filter-data"
+import { isServerBackedDataset } from "@/lib/dataset-source"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -297,15 +298,35 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
         <NumericSummary rows={filteredRows} numericColumns={numericColumns} />
       </div>
 
-      {/* 4. Data preview — every row and column of the current view */}
+      {/* 4. Data preview — M2: server-backed datasets page through the
+          backend (DataTable owns pagination); small datasets render the full
+          preview as before. Filters/charts still read the bounded preview
+          until M3/M4. */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Data preview</CardTitle>
           <CardDescription>
-            {formatCount(visibleRows.length)} of {formatCount(rowCount)} rows
-            {" · "}
-            {formatCount(visibleColumns.length)} of {formatCount(columnCount)}{" "}
-            columns{filtersActive ? " · filtered" : ""} — {dataset.filename}
+            {isServerBackedDataset(dataset) ? (
+              <>
+                {formatCount(rowCount)} rows
+                {" · "}
+                {formatCount(visibleColumns.length)} of{" "}
+                {formatCount(columnCount)} columns · paginated —{" "}
+                {dataset.filename}
+                {filtersActive
+                  ? " · filters apply to the preview summaries only"
+                  : ""}
+              </>
+            ) : (
+              <>
+                {formatCount(visibleRows.length)} of {formatCount(rowCount)}{" "}
+                rows
+                {" · "}
+                {formatCount(visibleColumns.length)} of{" "}
+                {formatCount(columnCount)} columns
+                {filtersActive ? " · filtered" : ""} — {dataset.filename}
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -314,6 +335,7 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
             columns={visibleColumns}
             filename={dataset.filename}
             filtersActive={filtersActive}
+            dataset={dataset}
           />
         </CardContent>
       </Card>

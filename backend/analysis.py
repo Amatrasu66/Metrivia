@@ -12,6 +12,8 @@ from itertools import islice
 import numpy as np
 import pandas as pd
 
+from dataset_store import SAMPLE_PREVIEW_ROWS, resolve_preview_limit
+
 logger = logging.getLogger("metrivia.analysis")
 
 # Heuristics for the categorical-vs-text split. A column is categorical when
@@ -242,6 +244,23 @@ def _column_json_values(series):
     return out
 
 
+def slice_to_records(df, start, end):
+    """Serialize only df.iloc[start:end] to row dicts (JSON-safe).
+
+    Reuses the same per-column fast paths as the upload preview
+    (`_column_json_values`), so NaN/inf -> None, timestamps -> ISO-8601,
+    numpy/nullable scalars -> natives. Never serializes the full frame;
+    callers pass the exact slice they need (preview sample or one page).
+    Column order follows df.columns.
+    """
+    column_names = [str(c) for c in df.columns]
+    sliced = df.iloc[start:end]
+    if len(sliced) == 0 or len(column_names) == 0:
+        return []
+    column_values = [_column_json_values(sliced[col]) for col in df.columns]
+    return [dict(zip(column_names, row)) for row in zip(*column_values)]
+
+
 # Phase L backend progress milestones (shared with app.py's streaming
 # upload endpoint). Values are grounded in measured timings on the 12 MiB /
 # 50k-row x 33-column Spotify CSV (local): read_csv ~0.5-1s (~15%), column
@@ -259,10 +278,11 @@ PROGRESS_ASSEMBLE_START = 80
 PROGRESS_ASSEMBLE_END = 85
 PROGRESS_RESPONSE_READY = 90
 
-# Row-assembly batch size for progress reporting: the preview list must exist
-# in full anyway (all rows returned), so batching only controls how often a
-# milestone is emitted, never the output. 5000 rows keeps per-batch work
-# small while emitting ~10 events for a 50k-row file and 1 for small files.
+# Row-assembly batch size for progress reporting: batching only controls
+# how often a milestone is emitted, never the output. 5000 rows keeps
+# per-batch work small while emitting ~10 events for a large preview and 1
+# for small files. (Phase M1: the preview itself is bounded for large
+# datasets, so this is at most one batch there.)
 PROGRESS_PREVIEW_BATCH_ROWS = 5000
 
 
@@ -330,19 +350,22 @@ def _analyze_iter(df, filename):
             yield ("progress", value, "analyzing_columns", "Analyzing columns")
     stats_ms = (time.perf_counter() - started) * 1000
 
-    # The full row set is returned (all rows, all columns): the frontend
-    # data viewer exposes every row/column with bounded scrolling instead of
-    # a fixed first-N subset. Upload size is capped at 20 MB by app.py, which
-    # bounds the worst-case payload.
+    # Phase M1: bounded preview. Small datasets keep the complete preview
+    # for compatibility (the current frontend reads dataset.preview); large
+    # datasets return only a deterministic head sample so the upload
+    # response never builds 50k row dicts. Stats above always run on the
+    # full frame; only this conversion is bounded. resolve_preview_limit()
+    # is the single source of truth (see dataset_store.py).
     #
     # Phase H: per-column vectorized conversion + a C-level transpose
     # replaces df.to_dict(orient="records") plus a per-cell to_jsonable()
-    # dict comprehension (previously ~2/3 of backend time on the 50k-row
-    # Spotify CSV). Row dicts keep the exact same keys/values.
+    # dict comprehension. Row dicts keep the exact same keys/values.
+    preview_limit = resolve_preview_limit(row_count, column_total)
+    preview_source = df.head(preview_limit) if preview_limit < row_count else df
     records_ms_start = time.perf_counter()
     column_values = []
     for index, column in enumerate(columns):
-        column_values.append(_column_json_values(df[column]))
+        column_values.append(_column_json_values(preview_source[column]))
         if column_total > 0:
             value = PROGRESS_CONVERT_START + ((index + 1) / column_total) * (
                 PROGRESS_CONVERT_END - PROGRESS_CONVERT_START
@@ -361,7 +384,8 @@ def _analyze_iter(df, filename):
                 break
             preview.extend(chunk)
             assembled += len(chunk)
-            fraction = min(1.0, assembled / row_count)
+            denom = preview_limit if preview_limit > 0 else row_count
+            fraction = min(1.0, assembled / denom) if denom else 1.0
             value = PROGRESS_ASSEMBLE_START + fraction * (
                 PROGRESS_ASSEMBLE_END - PROGRESS_ASSEMBLE_START
             )

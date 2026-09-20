@@ -7,13 +7,36 @@ workers — intentionally minimal for Render's free tier.
 
 - `GET /api/health` — confirms the backend is running.
 - `POST /api/upload` — accepts a CSV file as `multipart/form-data` field
-  `file`, analyzes it in memory with Pandas, and returns dataset statistics
-  plus the full row data (every row, every column). Files are never written to disk.
+  `file`, analyzes it in memory with Pandas, stores the DataFrame in the
+  in-process dataset store, and returns dataset statistics plus a preview.
+  Files are never written to disk. `POST /api/upload?stream=progress`
+  streams the same result as NDJSON milestones + dataset (uncompressed).
+- `GET /api/datasets/<dataset_id>` — metadata for a stored dataset
+  (`dataset_id`, `row_count`, `column_count`, `columns`, `preview_count`,
+  `metadata` with `filename`/`dtypes`/`missing`/`unique`/`numeric_stats`).
+  Unknown/expired IDs return `{"error": "Not found."}` with HTTP 404.
+- `GET /api/datasets/<dataset_id>/rows?page=0&page_size=100` — paginated
+  rows (`dataset_id`, `page`, `page_size`, `row_count`, `rows`). Only the
+  requested slice is serialized; a valid page past the end returns
+  `"rows": []`. `page_size` max is 500. Unknown/expired IDs return 404.
 
-Upload response includes: `filename`, `row_count`, `column_count`,
-`columns`, `dtypes` (numeric / categorical / datetime / boolean / text),
-`missing` values per column, `unique` counts per column, `numeric_stats`
-for numeric columns, and `preview` rows.
+Upload response includes: `dataset_id`, `filename`, `row_count` (total
+rows), `column_count`, `columns`, `dtypes` (numeric / categorical /
+datetime / boolean / text), `missing` values per column, `unique` counts
+per column, `numeric_stats` for numeric columns, `preview` rows, and
+`preview_count` (rows actually returned in `preview`).
+
+Preview policy (centralized in `backend/dataset_store.py`): datasets with
+at most 5000 rows AND 100000 cells keep the complete `preview` (backward
+compatible); larger datasets return only the first 500 rows
+(`df.head(500)`). `preview_count` is the preview size, `row_count` the
+total. The DataFrame stays server-side as the canonical representation.
+
+Dataset store: in-process only (see `backend/dataset_store.py`) — entries
+disappear on process restart, are not shared between backend instances,
+expire after `DATASET_TTL_SECONDS` (default 1800), hold at most
+`MAX_DATASETS` (default 3, LRU-evicted), and are thread-safe. Temporary
+workspace storage, not a database.
 
 ## Run locally (Windows PowerShell)
 
@@ -57,6 +80,8 @@ curl.exe -F "file=@sample.csv;type=text/csv" http://127.0.0.1:5000/api/upload
 | `CORS_ORIGINS`   | local dev allowlist (see below) | Comma-separated allowed origins          |
 | `MAX_UPLOAD_MB`  | `20`                    | Max CSV size; larger requests get a JSON 413 |
 | `FLASK_DEBUG`    | (off)                   | Set to `1` for debug mode in development |
+| `DATASET_TTL_SECONDS` | `1800`             | Dataset-store entry TTL (seconds) |
+| `MAX_DATASETS`   | `3`                     | Max stored datasets (LRU-evicted past this) |
 
 ## CORS origins
 
@@ -90,8 +115,10 @@ dropped. Run the CORS regression tests with:
   plain-language message. Nothing is stored server-side.
 - The upload response streams its JSON body (`iterencode`, 64 KiB chunks)
   so a large dataset does not sit in memory twice (records list + one
-  giant string). Raw bytes and the DataFrame are released as soon as the
-  records list exists.
+  giant string). Raw bytes are released before analysis; for large
+  datasets only the bounded head-sample preview is converted (never full
+  row dictionaries for the response). Pagination serializes only the
+  requested page. The stored DataFrame is the canonical representation.
 
 ## Render Free memory note
 
@@ -99,8 +126,10 @@ dropped. Run the CORS regression tests with:
 512 MB / 0.1 CPU Free instance: Pandas object-dtype amplification means a
 string-heavy max-size CSV can still exhaust memory while parsing. Numeric
 or modest files process comfortably; pathological files may fail despite
-the limit. No database, session store, or chunk endpoint was added — the
-backend stays stateless by design.
+the limit. The in-process dataset store adds at most `MAX_DATASETS`
+retained DataFrames (default 3, TTL 30 min, LRU-evicted) — no database,
+no persistent state across restarts, and only the
+`GET /api/datasets/<id>/rows` slice endpoint beyond the upload itself.
 
 ## Deploy notes (Render free tier)
 
