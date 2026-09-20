@@ -16,6 +16,7 @@
     "scatter:test": "node ./scripts/scatter-bounds-test.mjs",
     "loading:test": "node ./scripts/loading-progress-test.mjs",
     "pagination:test": "node ./scripts/dataset-pagination-test.mjs",
+    "filtering:test": "node ./scripts/dataset-filtering-test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

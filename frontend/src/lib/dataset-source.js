@@ -113,9 +113,36 @@ export function clampPage(page, totalPages) {
   return Math.min(Math.max(0, normalizePage(page)), Math.ceil(total) - 1)
 }
 
-/** Cache key for one fetched page (dataset + page + size). */
-export function pageCacheKey(datasetId, page, pageSize) {
-  return `${datasetId ?? ""}:${normalizePage(page)}:${normalizePageSize(pageSize)}`
+/**
+ * Cache key for one fetched page (dataset + page + size + filter key).
+ * The trailing filter segment keeps M2 unfiltered keys stable: empty
+ * filter keys return the exact legacy `id:page:size` shape, while any
+ * active filter appends `:<filterKey>` so filtered pages can never reuse
+ * unfiltered entries (and vice versa).
+ */
+export function pageCacheKey(datasetId, page, pageSize, filterKey = "") {
+  const base = `${datasetId ?? ""}:${normalizePage(page)}:${normalizePageSize(pageSize)}`
+  return typeof filterKey === "string" && filterKey !== ""
+    ? `${base}:${filterKey}`
+    : base
+}
+
+/**
+ * Centralized Phase M3 branch decision: small/full-preview datasets keep
+ * existing client-side filtering; large/server-backed datasets must use
+ * server-side filtering + pagination. Both paths consume the same
+ * normalized UI filter state (see `toServerFilters`).
+ */
+export function shouldUseServerFiltering(dataset) {
+  return isServerBackedDataset(dataset)
+}
+
+/** Authoritative filtered count from a filter-query response. */
+export function getFilteredRowCount(body, fallback = 0) {
+  const raw =
+    body?.filtered_row_count ?? body?.filteredRowCount ?? body?.row_count
+  const num = Number(raw)
+  return Number.isFinite(num) && num >= 0 ? Math.floor(num) : fallback
 }
 
 /**

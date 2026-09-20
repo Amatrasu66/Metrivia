@@ -477,17 +477,81 @@ export async function getDatasetMetadata(datasetId, { baseUrl, signal } = {}) {
 }
 
 /**
+ * Shared POST helper for the Phase M3 filter endpoint — same base URL,
+ * error mapping, and abort semantics as the GET helper above. No new HTTP
+ * library; plain fetch with JSON.
+ */
+async function postDatasetJson(path, payload, { baseUrl, signal } = {}) {
+  const url = `${resolveBaseUrl(baseUrl)}${path}`
+  let response
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+      signal,
+    })
+  } catch (err) {
+    if (err?.name === "AbortError") throw err
+    throw new ApiError(networkErrorMessage(), { isNetworkError: true })
+  }
+  const body = await parseJsonSafe(response)
+  if (!response.ok) {
+    const message =
+      body && typeof body.error === "string" && body.error.trim() !== ""
+        ? body.error
+        : `Request failed (HTTP ${response.status}). Please try again.`
+    throw new ApiError(message, { status: response.status })
+  }
+  return body
+}
+
+/**
+ * POST /api/datasets/<id>/filter — one bounded page of server-filtered
+ * rows over the FULL dataset plus the authoritative `filtered_row_count`
+ * (and total `row_count`). `filters` is the structured list from
+ * `toServerFilters` (empty → all rows). Only the requested page is ever
+ * returned. Re-throws AbortError untouched; 404 means the session expired.
+ */
+export async function queryFilteredDatasetRows(
+  datasetId,
+  { page = 0, pageSize = 200, filters = [], baseUrl, signal } = {},
+) {
+  const id = requireDatasetId(datasetId)
+  const list = Array.isArray(filters) ? filters : []
+  return postDatasetJson(`/api/datasets/${encodeURIComponent(id)}/filter`, {
+    filters: list,
+    page,
+    page_size: pageSize,
+  }, { baseUrl, signal })
+}
+
+/**
  * GET /api/datasets/<id>/rows?page=0&page_size=200 — one bounded page of
  * rows (never the whole dataset). `page` is 0-based; `pageSize` clamps to
  * the backend maximum server-side, but callers should use the centralized
  * SERVER_PAGE_SIZE_* constants. Re-throws AbortError untouched so table
  * cancellation stays silent; a 404 ApiError means the server session
  * expired (callers show the expired-dataset state, never auto-retry).
+ *
+ * Phase M3: when a non-empty structured `filters` list is provided, this
+ * delegates to POST /api/datasets/<id>/filter instead so every call site
+ * keeps one entry point; without filters the legacy GET path is used
+ * unchanged (M2 pagination tests stay green).
  */
 export async function getDatasetRows(
   datasetId,
-  { page = 0, pageSize = 200, baseUrl, signal } = {},
+  { page = 0, pageSize = 200, filters = null, baseUrl, signal } = {},
 ) {
+  if (Array.isArray(filters) && filters.length > 0) {
+    return queryFilteredDatasetRows(datasetId, {
+      page,
+      pageSize,
+      filters,
+      baseUrl,
+      signal,
+    })
+  }
   const id = requireDatasetId(datasetId)
   return fetchDatasetJson(`/api/datasets/${encodeURIComponent(id)}/rows`, {
     baseUrl,

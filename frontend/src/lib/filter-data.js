@@ -264,3 +264,72 @@ export function buildFilteredDataset(dataset, filteredRows) {
     filtered_row_count: rows.length,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Phase M3 — server-side structured filters (same UI state, backend query)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert dashboard filter state to the backend structured list.
+ *
+ * Mapping preserves existing semantics exactly:
+ * - categorical { col: [labels] } → one `{ column, operator: "in", value }`
+ *   (OR within the column; "(blank)" selects missing values).
+ * - datetime { col: { from, to } } → `gte` from / `lte` to on "YYYY-MM-DD"
+ *   (inclusive day bounds, same as the client day-string comparison).
+ * - numeric { col: { min, max } } → `gte` min / `lte` max (inclusive,
+ *   finite numbers only; invalid bounds are skipped as inactive).
+ *
+ * AND across all entries (same as applyFilters). Returns a new array;
+ * inputs are never mutated. Unknown/empty restrictions are skipped.
+ */
+export function toServerFilters(filters) {
+  const list = []
+  const categorical = filters?.categorical ?? {}
+  for (const [column, selected] of Object.entries(categorical)) {
+    if (typeof column !== "string" || column === "") continue
+    if (!Array.isArray(selected) || selected.length === 0) continue
+    const values = selected.filter((v) => typeof v === "string")
+    if (values.length === 0) continue
+    list.push({ column, operator: "in", value: [...values] })
+  }
+  const datetime = filters?.datetime ?? {}
+  for (const [column, bounds] of Object.entries(datetime)) {
+    if (typeof column !== "string" || column === "") continue
+    if (bounds === null || typeof bounds !== "object") continue
+    const from = typeof bounds.from === "string" ? bounds.from : ""
+    const to = typeof bounds.to === "string" ? bounds.to : ""
+    if (from !== "") list.push({ column, operator: "gte", value: from })
+    if (to !== "") list.push({ column, operator: "lte", value: to })
+  }
+  const numeric = filters?.numeric ?? {}
+  for (const [column, bounds] of Object.entries(numeric)) {
+    if (typeof column !== "string" || column === "") continue
+    if (bounds === null || typeof bounds !== "object") continue
+    const lo = parseBound(bounds.min)
+    const hi = parseBound(bounds.max)
+    if (lo !== null) list.push({ column, operator: "gte", value: lo })
+    if (hi !== null) list.push({ column, operator: "lte", value: hi })
+  }
+  return list
+}
+
+/**
+ * Deterministic key for a structured filter list (cache identity +
+ * request comparison). Sorts by column/operator/value JSON so equivalent
+ * UI states share one key regardless of insertion order. Empty → "".
+ */
+export function buildServerFilterKey(serverFilters) {
+  if (!Array.isArray(serverFilters) || serverFilters.length === 0) return ""
+  const sorted = [...serverFilters].sort((a, b) => {
+    const ka = `${a.column ?? ""}\u0000${a.operator ?? ""}\u0000${JSON.stringify(a.value ?? null)}`
+    const kb = `${b.column ?? ""}\u0000${b.operator ?? ""}\u0000${JSON.stringify(b.value ?? null)}`
+    return ka < kb ? -1 : ka > kb ? 1 : 0
+  })
+  return JSON.stringify(sorted)
+}
+
+/** True when the structured list actually restricts rows. */
+export function isServerFilterActive(serverFilters) {
+  return Array.isArray(serverFilters) && serverFilters.length > 0
+}

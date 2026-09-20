@@ -289,7 +289,7 @@ check("R15 placeholder passes dataset to the table", /<DataTable[\s\S]*dataset=\
 check("R16 api exposes metadata + rows with signal", /export async function getDatasetMetadata/.test(apiSrc) && /export async function getDatasetRows/.test(apiSrc) && /signal/.test(apiSrc))
 check("R17 no new HTTP library", !/from ["']axios["']|require\(["']axios["']\)|from ["']ky["']|from ["']superagent["']/.test(apiSrc))
 check("R18 preview retained for chart/filter consumers", /dataset\.preview/.test(placeholderSrc) || /preview/.test(srcFile("lib/chart-data.js")))
-check("R19 filters scoped honestly on server tables", /preview summaries only/.test(tableSrc) || /preview.*only/i.test(tableSrc))
+check("R19 filters scoped honestly on server tables (M3: server-filtered pagination)", /filtered rows of/.test(tableSrc) && /server-filtered pagination|serverFiltering|filterKey/.test(tableSrc))
 check("R20 page size centralized (200 default, 500 max)", /SERVER_PAGE_SIZE_DEFAULT/.test(tableSrc) && /200/.test(srcFile("lib/dataset-source.js")) && /500/.test(srcFile("lib/dataset-source.js")))
 
 console.log(`\n${pass} passed, ${fail} failed`)

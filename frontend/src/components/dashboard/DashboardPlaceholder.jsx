@@ -5,7 +5,7 @@ import {
   Hash,
   Rows3,
 } from "lucide-react"
-import { memo, useCallback, useMemo } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { formatCount, formatPercent } from "@/lib/format"
 import {
   applyFilters,
@@ -13,7 +13,10 @@ import {
   defaultFilterState,
   isFilterActive,
 } from "@/lib/filter-data"
-import { isServerBackedDataset } from "@/lib/dataset-source"
+import {
+  getDatasetRowCount,
+  isServerBackedDataset,
+} from "@/lib/dataset-source"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -54,6 +57,23 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   // Hooks stay above the early return. All helpers tolerate a null
   // dataset; the empty branch below renders before any of it is used.
   const { tap } = useMetriviaHaptics()
+  const serverBacked = isServerBackedDataset(dataset)
+  // Phase M3 authoritative server counts (lifted from DataTable, which owns
+  // filtered pagination). Null until the first filtered page resolves.
+  const [serverFilteredCount, setServerFilteredCount] = useState(null)
+  const handleServerCounts = useCallback((filtered) => {
+    setServerFilteredCount(filtered)
+  }, [])
+  // Workspace/dataset switches must not leak the previous dataset's
+  // authoritative count into the new KPI.
+  const datasetIdForCounts = dataset?.dataset_id ?? dataset?.datasetId ?? null
+  const lastDatasetIdRef = useRef(datasetIdForCounts)
+  useEffect(() => {
+    if (lastDatasetIdRef.current !== datasetIdForCounts) {
+      lastDatasetIdRef.current = datasetIdForCounts
+      setServerFilteredCount(null)
+    }
+  }, [datasetIdForCounts])
   const columns = useMemo(
     () => (Array.isArray(dataset?.columns) ? dataset.columns : []),
     [dataset],
@@ -62,6 +82,10 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
     () => (Array.isArray(dataset?.preview) ? dataset.preview : []),
     [dataset],
   )
+  // Local/small path: client filtering over the complete preview.
+  // Server/large path: the preview is only a bounded head sample, so this
+  // client result is preview-scoped (charts + numeric summary until M4);
+  // the table + Rows KPI below use authoritative server counts instead.
   const filteredRows = useMemo(
     () => applyFilters(preview, filters),
     [preview, filters],
@@ -83,6 +107,7 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   const filtersActive = isFilterActive(filters)
   const resetFilters = useCallback(() => {
     tap()
+    setServerFilteredCount(null)
     onFiltersChange(defaultFilterState(dataset))
   }, [dataset, onFiltersChange, tap])
   // Stable element identity so the memoized ChartBuilder does not see a new
@@ -169,20 +194,36 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
   const missing = dataset.missing ?? {}
   const unique = dataset.unique ?? {}
 
-  const rowCount = Number(dataset.row_count) || 0
+  const rowCount = getDatasetRowCount(dataset)
   const columnCount = Number(dataset.column_count) || columns.length
   const numericCount = columns.filter((col) => dtypes[col] === "numeric").length
 
+  // Phase M3 Rows KPI: small datasets use the client-filtered preview
+  // (complete); server datasets use the authoritative filtered count lifted
+  // from DataTable. Never imply the 500-row preview is the full result.
+  // Sum/average/min/max stay preview-scoped (see NumericSummary note) —
+  // full-dataset aggregation is M4 work and is not claimed here.
+  const serverRowsValue = !filtersActive
+    ? formatCount(rowCount)
+    : serverFilteredCount === null || serverFilteredCount === undefined
+      ? `${formatCount(rowCount)} total · filtering…`
+      : `${formatCount(serverFilteredCount)} of ${formatCount(rowCount)}`
   const kpis = [
     {
       icon: Rows3,
       label: "Rows",
-      value: filtersActive
-        ? `${formatCount(filteredRows.length)} of ${formatCount(rowCount)}`
-        : formatCount(rowCount),
-      hint: filtersActive
-        ? "Filtered rows of the uploaded total"
-        : "Data rows, excluding the header",
+      value: serverBacked
+        ? serverRowsValue
+        : filtersActive
+          ? `${formatCount(filteredRows.length)} of ${formatCount(rowCount)}`
+          : formatCount(rowCount),
+      hint: serverBacked
+        ? filtersActive
+          ? "Authoritative filtered rows of the full dataset"
+          : "Data rows, excluding the header"
+        : filtersActive
+          ? "Filtered rows of the uploaded total"
+          : "Data rows, excluding the header",
     },
     {
       icon: Columns3,
@@ -200,7 +241,9 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
       icon: Gauge,
       label: "Completeness",
       value: formatPercent(completeness),
-      hint: "Share of non-empty cells in the current view",
+      hint: serverBacked
+        ? "Share of non-empty cells in the preview sample"
+        : "Share of non-empty cells in the current view",
     },
   ]
 
@@ -219,13 +262,26 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
         ))}
       </div>
 
-      {/* 2. Primary visualization */}
+      {/* 2. Primary visualization — M3: charts still aggregate the bounded
+          preview sample (M4 moves them server-side). The scope note below
+          keeps filtered charts honest instead of implying full-dataset
+          filtered results. */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Chart</CardTitle>
           <CardDescription>
-            Configure the visualization — it updates instantly from the
-            current view and respects active filters.
+            {serverBacked ? (
+              <>
+                Configure the visualization — preview sample scope
+                ({formatCount(preview.length)} rows); full-dataset filtered
+                aggregation arrives in M4.
+              </>
+            ) : (
+              <>
+                Configure the visualization — it updates instantly from the
+                current view and respects active filters.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -295,26 +351,36 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
           </CardContent>
         </Card>
 
-        <NumericSummary rows={filteredRows} numericColumns={numericColumns} />
+        {/* M3: min/mean/max below are preview-scoped for server datasets
+            (bounded sample, not full-dataset aggregation). Full server-side
+            aggregation is M4 work — the note keeps them honest. */}
+        <NumericSummary
+          rows={filteredRows}
+          numericColumns={numericColumns}
+          scopeNote={
+            serverBacked
+              ? "Preview sample scope — full-dataset aggregation arrives in M4."
+              : null
+          }
+        />
       </div>
 
-      {/* 4. Data preview — M2: server-backed datasets page through the
-          backend (DataTable owns pagination); small datasets render the full
-          preview as before. Filters/charts still read the bounded preview
-          until M3/M4. */}
+      {/* 4. Data preview — M3: server-backed datasets page through filtered
+           server pagination (DataTable owns it); small datasets render the
+           full preview as before. Charts stay preview-scoped until M4. */}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Data preview</CardTitle>
           <CardDescription>
-            {isServerBackedDataset(dataset) ? (
+            {serverBacked ? (
               <>
                 {formatCount(rowCount)} rows
                 {" · "}
                 {formatCount(visibleColumns.length)} of{" "}
-                {formatCount(columnCount)} columns · paginated —{" "}
+                {formatCount(columnCount)} columns · server-filtered pagination —{" "}
                 {dataset.filename}
                 {filtersActive
-                  ? " · filters apply to the preview summaries only"
+                  ? " · table pages the full filtered dataset"
                   : ""}
               </>
             ) : (
@@ -335,7 +401,9 @@ export const DashboardPlaceholder = memo(function DashboardPlaceholder({
             columns={visibleColumns}
             filename={dataset.filename}
             filtersActive={filtersActive}
+            filters={filters}
             dataset={dataset}
+            onFilteredCountChange={handleServerCounts}
           />
         </CardContent>
       </Card>

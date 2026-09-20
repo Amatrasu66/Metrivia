@@ -31,6 +31,7 @@ function formatStat(value, digits = 2) {
 export const NumericSummary = memo(function NumericSummary({
   rows,
   numericColumns,
+  scopeNote = null,
 }) {
   const summaries = useMemo(() => {
     const list = Array.isArray(numericColumns) ? numericColumns : []
@@ -61,7 +62,9 @@ export const NumericSummary = memo(function NumericSummary({
       <CardHeader>
         <CardTitle>Numeric summary</CardTitle>
         <CardDescription>
-          Range and average for numeric columns in the current view.
+          {typeof scopeNote === "string" && scopeNote !== ""
+            ? scopeNote
+            : "Range and average for numeric columns in the current view."}
         </CardDescription>
       </CardHeader>
       <CardContent>

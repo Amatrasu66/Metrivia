@@ -41,6 +41,13 @@ from dataset_store import (
     PAGE_SIZE_DEFAULT,
     PAGE_SIZE_MAX,
 )
+from filter_engine import (
+    FilterValidationError,
+    apply_filters,
+    validate_filter_request,
+    FILTER_OPERATORS,
+    MAX_FILTERS,
+)
 
 logger = logging.getLogger("metrivia.app")
 
@@ -336,6 +343,118 @@ def create_app(cors_origins=None):
                     "page": page,
                     "page_size": page_size,
                     "row_count": row_count,
+                    "rows": rows,
+                }
+            ),
+            200,
+        )
+
+    @app.post("/api/datasets/<dataset_id>/filter")
+    def dataset_filter(dataset_id):
+        """Phase M3: server-side filtering over the full dataset + pagination.
+
+        Request body (JSON):
+        {
+            "filters": [
+                {"column": "Artist", "operator": "contains", "value": "Taylor"},
+                {"column": "Streams", "operator": "gte", "value": 1000000}
+            ],
+            "page": 0,
+            "page_size": 200
+        }
+
+        Only structured ``{column, operator, value}`` descriptors are
+        accepted (see filter_engine.py). Arbitrary expressions are never
+        executed — no eval/exec/df.query with client strings.
+
+        Response:
+        {
+            "dataset_id": "...",
+            "page": 0,
+            "page_size": 200,
+            "row_count": 50000,
+            "filtered_row_count": 1732,
+            "rows": [...]
+        }
+
+        ``row_count`` is the total dataset size; ``filtered_row_count`` is
+        the authoritative full-dataset match count. Only the requested page
+        is serialized — never the complete filtered dataset. Combination
+        semantics are AND across filters (categorical OR is a single ``in``
+        filter). Missing values never match value operators; use
+        ``is_empty`` / ``is_not_empty`` for them.
+        """
+        record = dataset_store.get_dataset(dataset_id)
+        if record is None:
+            return jsonify({"error": "Not found."}), 404
+
+        if not request.is_json:
+            return _error("Request must be JSON.", 400)
+
+        data = request.get_json(silent=True)
+        if data is None or not isinstance(data, dict):
+            return _error("Invalid JSON body.", 400)
+
+        meta = record.metadata if isinstance(record.metadata, dict) else {}
+        try:
+            validated = validate_filter_request(
+                data,
+                meta.get("columns", []),
+                meta.get("dtypes", {}),
+            )
+        except FilterValidationError as exc:
+            return _error(str(exc), 400)
+
+        filters = validated["filters"]
+        page = validated["page"]
+        page_size = validated["page_size"]
+
+        df = record.dataframe
+        try:
+            mask = apply_filters(
+                df, filters, meta.get("dtypes", {}) if isinstance(meta, dict) else None
+            )
+        except FilterValidationError as exc:
+            return _error(str(exc), 400)
+        except Exception:
+            return _error("Failed to apply filters.", 500)
+
+        try:
+            filtered_count = int(mask.sum())
+        except Exception:
+            return _error("Failed to apply filters.", 500)
+        row_count = int(len(df))
+        start = page * page_size
+        end = min(start + page_size, filtered_count)
+
+        if start < filtered_count:
+            # Slice only the requested page positions: flatnonzero avoids
+            # materializing the full filtered frame (50k -> page of <=500).
+            try:
+                import numpy as _np
+
+                positions = _np.flatnonzero(mask.to_numpy(dtype=bool, copy=False))
+                page_positions = positions[start:end]
+                rows = slice_to_records(
+                    df.iloc[page_positions] if len(page_positions) else df.iloc[0:0],
+                    0,
+                    len(page_positions),
+                )
+            except FilterValidationError as exc:
+                return _error(str(exc), 400)
+            except Exception:
+                return _error("Failed to apply filters.", 500)
+        else:
+            rows = []
+
+        return (
+            jsonify(
+                {
+                    "dataset_id": record.dataset_id,
+                    "page": page,
+                    "page_size": page_size,
+                    "row_count": row_count,
+                    "filtered_row_count": filtered_count,
                     "rows": rows,
                 }
             ),
